@@ -10,6 +10,8 @@ This project is an independent open-source implementation of familiar property-t
 
 [Play Classic Estate](https://194-195-124-192.nip.io/)
 
+![Classic Estate gameplay screenshot](docs/assets/classic-estate-gameplay.png)
+
 ## Features
 
 - 40-space classic-style board with start rewards, taxes, chance spaces, and community fund spaces
