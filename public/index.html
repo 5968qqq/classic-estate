@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#182025" />
+    <title>地产风云</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <a class="brand" href="/" aria-label="地产风云首页">
+          <img src="/board-mark.svg" alt="" />
+          <span>地产风云</span>
+        </a>
+        <div id="room-meta" class="room-meta" hidden></div>
+        <label class="language-control" for="language-select">
+          <span>语言</span>
+          <select id="language-select" aria-label="界面语言">
+            <option value="zh-CN">中文</option>
+            <option value="en">English</option>
+          </select>
+        </label>
+        <div id="connection" class="connection" aria-live="polite">
+          <span></span>本地
+        </div>
+      </header>
+
+      <main>
+        <section id="home-view" class="home-view">
+          <div class="entry-panel">
+            <div class="mode-tabs" role="tablist" aria-label="进入方式">
+              <button class="tab-button active" data-entry-tab="create" role="tab" aria-selected="true">创建房间</button>
+              <button class="tab-button" data-entry-tab="join" role="tab" aria-selected="false">加入房间</button>
+            </div>
+            <form id="create-form" class="entry-form">
+              <label for="create-name">玩家名称</label>
+              <input id="create-name" name="name" maxlength="12" autocomplete="nickname" placeholder="输入名称" required />
+              <button class="primary-button" type="submit">
+                <svg aria-hidden="true"><use href="/icons.svg#plus"></use></svg>
+                创建房间
+              </button>
+            </form>
+            <form id="join-form" class="entry-form" hidden>
+              <label for="join-name">玩家名称</label>
+              <input id="join-name" name="name" maxlength="12" autocomplete="nickname" placeholder="输入名称" required />
+              <label for="join-code">房间码</label>
+              <input id="join-code" name="code" maxlength="5" autocomplete="off" placeholder="ABCDE" required />
+              <button class="primary-button" type="submit">
+                <svg aria-hidden="true"><use href="/icons.svg#log-in"></use></svg>
+                加入房间
+              </button>
+            </form>
+          </div>
+        </section>
+
+        <section id="lobby-view" class="lobby-view" hidden>
+          <div class="lobby-tool">
+            <div class="lobby-heading">
+              <div>
+                <span class="eyebrow">房间码</span>
+                <div class="room-code-line">
+                  <strong id="lobby-code"></strong>
+                  <button id="copy-room" class="icon-button" type="button" title="复制邀请链接" aria-label="复制邀请链接">
+                    <svg aria-hidden="true"><use href="/icons.svg#copy"></use></svg>
+                  </button>
+                </div>
+              </div>
+              <span id="lobby-count" class="capacity"></span>
+            </div>
+            <div id="lobby-players" class="lobby-players"></div>
+            <div id="lobby-mode" class="lobby-mode"></div>
+            <div id="lobby-actions" class="lobby-actions"></div>
+          </div>
+        </section>
+
+        <section id="game-view" class="game-view" hidden>
+          <div class="board-shell">
+            <div id="board-toolbar" class="board-toolbar" role="toolbar" aria-label="地图视图">
+              <div class="zoom-controls">
+                <button class="icon-button" type="button" data-board-zoom="out" title="缩小地图" aria-label="缩小地图">
+                  <svg aria-hidden="true"><use href="/icons.svg#zoom-out"></use></svg>
+                </button>
+                <button class="zoom-reset" type="button" data-board-zoom="reset" title="重置缩放" aria-label="重置缩放">
+                  <span id="board-zoom-value">100%</span>
+                </button>
+                <button class="icon-button" type="button" data-board-zoom="in" title="放大地图" aria-label="放大地图">
+                  <svg aria-hidden="true"><use href="/icons.svg#zoom-in"></use></svg>
+                </button>
+              </div>
+              <label class="fast-move-setting" for="fast-move">
+                <span>快速移动</span>
+                <span class="switch-control">
+                  <input id="fast-move" type="checkbox" />
+                  <span aria-hidden="true"></span>
+                </span>
+              </label>
+            </div>
+            <div id="board-viewport" class="board-wrap">
+              <div id="board-stage" class="board-stage">
+                <div id="board" class="board" aria-label="游戏棋盘">
+                  <svg id="movement-trails" class="movement-trails" viewBox="0 0 1100 1100" preserveAspectRatio="none" aria-hidden="true"></svg>
+                  <div id="player-tokens" class="player-tokens-layer" aria-hidden="true"></div>
+                  <div id="moving-token" class="moving-token" hidden></div>
+                  <div id="board-center" class="board-center"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <aside class="game-panel">
+            <div class="panel-tabs" role="tablist" aria-label="游戏信息">
+              <button class="panel-tab active" data-panel-tab="players" role="tab" aria-selected="true">
+                <svg aria-hidden="true"><use href="/icons.svg#users"></use></svg>玩家
+              </button>
+              <button class="panel-tab" data-panel-tab="assets" role="tab" aria-selected="false">
+                <svg aria-hidden="true"><use href="/icons.svg#building"></use></svg>资产
+              </button>
+              <button class="panel-tab" data-panel-tab="log" role="tab" aria-selected="false">
+                <svg aria-hidden="true"><use href="/icons.svg#scroll"></use></svg>记录
+              </button>
+              <button class="panel-tab" data-panel-tab="stats" role="tab" aria-selected="false">
+                <svg aria-hidden="true"><use href="/icons.svg#landmark"></use></svg>统计
+              </button>
+            </div>
+            <div id="panel-content" class="panel-content"></div>
+            <div id="bank-status" class="bank-status"></div>
+          </aside>
+        </section>
+      </main>
+    </div>
+
+    <dialog id="property-dialog" class="property-dialog">
+      <button class="dialog-close icon-button" type="button" title="关闭" aria-label="关闭">
+        <svg aria-hidden="true"><use href="/icons.svg#x"></use></svg>
+      </button>
+      <div id="property-content"></div>
+    </dialog>
+
+    <dialog id="trade-dialog" class="trade-dialog">
+      <button class="dialog-close icon-button trade-close" type="button" title="关闭" aria-label="关闭">
+        <svg aria-hidden="true"><use href="/icons.svg#x"></use></svg>
+      </button>
+      <div id="trade-content"></div>
+    </dialog>
+
+    <dialog id="victory-dialog" class="victory-dialog">
+      <div id="victory-content"></div>
+    </dialog>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script src="/i18n.js" defer></script>
+    <script src="/app.js" defer></script>
+  </body>
+</html>

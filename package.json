@@ -1,0 +1,15 @@
+{
+  "name": "classic-estate",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Server-authoritative classic property trading board game",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test",
+    "test:e2e": "node scripts/e2e-smoke.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

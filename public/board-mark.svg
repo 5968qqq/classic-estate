@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 120" role="img" aria-label="地产风云城市标志">
+  <rect width="160" height="120" fill="#f4f1e8"/>
+  <path d="M12 104h136" stroke="#182025" stroke-width="6"/>
+  <path d="M24 104V63h25v41M55 104V38h34v66M96 104V52h39v52" fill="#e8edf1" stroke="#182025" stroke-width="5"/>
+  <path d="M62 38V23h20v15M105 52V34h17v18" fill="none" stroke="#182025" stroke-width="5"/>
+  <path d="M30 72h12M30 84h12M63 50h8M77 50h5M63 64h8M77 64h5M63 78h8M77 78h5M104 65h10M120 65h7M104 79h10M120 79h7" stroke="#2d9665" stroke-width="5"/>
+  <circle cx="22" cy="27" r="10" fill="#e0b923" stroke="#182025" stroke-width="4"/>
+</svg>
