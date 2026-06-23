@@ -6,6 +6,10 @@ The game focuses on the core tabletop experience: rolling dice, buying propertie
 
 This project is an independent open-source implementation of familiar property-trading board game mechanics. It is not affiliated with or endorsed by any tabletop game publisher.
 
+## Live Demo
+
+[Play Classic Estate](https://194-195-124-192.nip.io/)
+
 ## Features
 
 - 40-space classic-style board with start rewards, taxes, chance spaces, and community fund spaces
