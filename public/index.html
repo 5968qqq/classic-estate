@@ -15,13 +15,12 @@
           <span>地产风云</span>
         </a>
         <div id="room-meta" class="room-meta" hidden></div>
-        <label class="language-control" for="language-select">
-          <span>语言</span>
-          <select id="language-select" aria-label="界面语言">
-            <option value="zh-CN">中文</option>
-            <option value="en">English</option>
-          </select>
-        </label>
+        <div class="language-control">
+          <button id="language-toggle" class="language-toggle" type="button">
+            <svg aria-hidden="true"><use href="/icons.svg#languages"></use></svg>
+            <span>English</span>
+          </button>
+        </div>
         <div id="connection" class="connection" aria-live="polite">
           <span></span>本地
         </div>
@@ -121,6 +120,9 @@
               </button>
               <button class="panel-tab" data-panel-tab="stats" role="tab" aria-selected="false">
                 <svg aria-hidden="true"><use href="/icons.svg#landmark"></use></svg>统计
+              </button>
+              <button class="panel-tab" data-panel-tab="rules" role="tab" aria-selected="false">
+                <svg aria-hidden="true"><use href="/icons.svg#help"></use></svg>规则
               </button>
             </div>
             <div id="panel-content" class="panel-content"></div>

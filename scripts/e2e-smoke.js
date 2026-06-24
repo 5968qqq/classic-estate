@@ -20,7 +20,12 @@ let serverProcess;
     stdio: ["ignore", "pipe", "pipe"],
   });
   await waitForServer("http://127.0.0.1:3107");
-  browser = await browserType.launch({ headless: true });
+  browser = await browserType.launch({
+    headless: true,
+    ...(process.env.PLAYWRIGHT_EXECUTABLE_PATH
+      ? { executablePath: process.env.PLAYWRIGHT_EXECUTABLE_PATH }
+      : {}),
+  });
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
   const page = await context.newPage();
   const consoleErrors = [];
@@ -29,6 +34,8 @@ let serverProcess;
   });
 
   await page.goto("http://127.0.0.1:3107", { waitUntil: "domcontentloaded" });
+  assert.equal((await page.locator("#language-toggle").textContent()).trim(), "English");
+  assert.equal(await page.locator("#language-toggle").getAttribute("aria-label"), "切换到英文");
   await page.locator("#create-name").fill("E2E Player");
   await page.locator("#create-form button[type=submit]").click();
   await page.locator("#lobby-view").waitFor({ state: "visible" });
@@ -143,6 +150,10 @@ let serverProcess;
   });
   assert.ok(tokenTrackLayout.distanceFromOuterEdge < 7);
   assert.equal(tokenTrackLayout.overlapsName, false);
+  await turnPage.evaluate(async () => {
+    await document.fonts.ready;
+    fitBoardLabels();
+  });
   const clippedDesktopLabels = await turnPage.evaluate(() => [...document.querySelectorAll(".cell-name")].filter(
     (label) => label.scrollHeight > label.clientHeight + 1 || label.scrollWidth > label.clientWidth + 1,
   ).map((label) => label.textContent));
@@ -207,10 +218,37 @@ let serverProcess;
   await turnPage.screenshot({ path: path.join(outputDir, "ownership-stats-desktop.png"), fullPage: true });
   await turnPage.locator('[data-stats-orientation="horizontal"]').click();
   await turnPage.locator(".ownership-table.horizontal").waitFor();
+  await turnPage.locator('[data-panel-tab="rules"]').click();
+  assert.equal(await turnPage.locator(".rules-section").count(), 7);
+  assert.match(await turnPage.locator(".rules-guide").textContent(), /目标与开局/);
+  assert.match(await turnPage.locator(".rules-guide").textContent(), /抵押、交易与债务/);
 
   await turnPage.setViewportSize({ width: 390, height: 844 });
   await turnPage.reload({ waitUntil: "domcontentloaded" });
   await turnPage.locator("#game-view").waitFor({ state: "visible" });
+  await turnPage.evaluate(() => {
+    const target = document.querySelector('[data-space-index="6"] .building-count');
+    target.outerHTML = buildingCountMarkup({ houses: 4 });
+    window.I18N?.localize(document.querySelector('[data-space-index="6"]'));
+  });
+  const mobileBuildingLayout = await turnPage.evaluate(() => {
+    const cell = document.querySelector('[data-space-index="6"]').getBoundingClientRect();
+    const badge = document.querySelector('[data-space-index="6"] .building-count').getBoundingClientRect();
+    const badgeStyle = getComputedStyle(document.querySelector('[data-space-index="6"] .building-count'));
+    return {
+      display: badgeStyle.display,
+      markerCount: document.querySelectorAll('[data-space-index="6"] .building-markers i').length,
+      width: badge.width,
+      height: badge.height,
+      insideCell: badge.left >= cell.left - 1 && badge.right <= cell.right + 1
+        && badge.top >= cell.top - 1 && badge.bottom <= cell.bottom + 1,
+    };
+  });
+  assert.equal(mobileBuildingLayout.display, "flex");
+  assert.equal(mobileBuildingLayout.markerCount, 4);
+  assert.ok(mobileBuildingLayout.width > 0);
+  assert.ok(mobileBuildingLayout.height > 0);
+  assert.equal(mobileBuildingLayout.insideCell, true);
   const mobileLayout = await turnPage.evaluate(() => {
     const board = document.querySelector("#board").getBoundingClientRect();
     const center = document.querySelector("#board-center").getBoundingClientRect();
@@ -225,6 +263,10 @@ let serverProcess;
   assert.ok(mobileLayout.board.right <= mobileLayout.viewport + 1);
   assert.ok(Math.abs(mobileLayout.board.width - mobileLayout.board.height) < 2);
   assert.equal(mobileLayout.overflow, 0);
+  await turnPage.evaluate(async () => {
+    await document.fonts.ready;
+    fitBoardLabels();
+  });
   const clippedMobileLabels = await turnPage.evaluate(() => [...document.querySelectorAll(".cell-name")].filter(
     (label) => label.scrollHeight > label.clientHeight + 1 || label.scrollWidth > label.clientWidth + 1,
   ).map((label) => label.textContent));
@@ -247,6 +289,10 @@ let serverProcess;
   assert.equal(statsMobileLayout.tableScrolls, true);
   assert.equal(statsMobileLayout.overflow, 0);
   await turnPage.screenshot({ path: path.join(outputDir, "ownership-stats-mobile.png"), fullPage: true });
+  await turnPage.locator('[data-panel-tab="rules"]').click();
+  assert.equal(await turnPage.locator(".rules-section").count(), 7);
+  assert.equal(await turnPage.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), 0);
+  await turnPage.screenshot({ path: path.join(outputDir, "rules-mobile.png"), fullPage: true });
 
   await turnPage.setViewportSize({ width: 1280, height: 900 });
   await turnPage.evaluate(() => {
@@ -346,7 +392,8 @@ let serverProcess;
   });
   await englishPage.goto("http://127.0.0.1:3107", { waitUntil: "domcontentloaded" });
   assert.equal(await englishPage.locator("html").getAttribute("lang"), "en");
-  assert.equal(await englishPage.locator("#language-select").inputValue(), "en");
+  assert.equal((await englishPage.locator("#language-toggle").textContent()).trim(), "中文");
+  assert.equal(await englishPage.locator("#language-toggle").getAttribute("aria-label"), "Switch to Chinese");
   assert.equal(await englishPage.locator('[data-entry-tab="create"]').textContent(), "Create Room");
   assert.equal(await englishPage.locator('[data-entry-tab="join"]').textContent(), "Join Room");
   await englishPage.screenshot({ path: path.join(outputDir, "english-home.png"), fullPage: true });
@@ -371,7 +418,11 @@ let serverProcess;
   await englishPage.locator('[data-action="roll"]').waitFor({ state: "visible", timeout: 20_000 });
   assert.equal(await englishPage.locator('[data-space-index="1"] .cell-name').textContent(), "Begonia Road");
   const englishPanelTabs = (await englishPage.locator(".panel-tab").allTextContents()).map((label) => label.trim());
-  assert.deepEqual(englishPanelTabs, ["Players", "Assets", "Log", "Stats"]);
+  assert.deepEqual(englishPanelTabs, ["Players", "Assets", "Log", "Stats", "Rules"]);
+  await englishPage.locator('[data-panel-tab="rules"]').click();
+  assert.equal(await englishPage.locator(".rules-section").count(), 7);
+  assert.match(await englishPage.locator(".rules-guide").textContent(), /Goal and setup/);
+  assert.doesNotMatch(await englishPage.locator(".rules-guide").textContent(), /[\p{Script=Han}]/u);
   await englishPage.locator('[data-space-index="1"]').click();
   assert.match(await englishPage.locator("#property-content").textContent(), /Purchase price/);
   assert.doesNotMatch(await englishPage.locator("#property-content").textContent(), /[\p{Script=Han}]/u);
@@ -396,6 +447,15 @@ let serverProcess;
   assert.ok(englishMobileLayout.connectionRight <= englishMobileLayout.width);
   await englishPage.screenshot({ path: path.join(outputDir, "english-game-mobile.png"), fullPage: true });
   await englishContext.close();
+
+  const toggleContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const togglePage = await toggleContext.newPage();
+  await togglePage.goto("http://127.0.0.1:3107", { waitUntil: "domcontentloaded" });
+  assert.equal((await togglePage.locator("#language-toggle").textContent()).trim(), "English");
+  await togglePage.locator("#language-toggle").click();
+  await togglePage.waitForFunction(() => document.documentElement.lang === "en");
+  assert.equal((await togglePage.locator("#language-toggle").textContent()).trim(), "中文");
+  await toggleContext.close();
 
   assert.deepEqual(consoleErrors, []);
   console.log(JSON.stringify({ browserEngine, roomCode, desktopLayout, mobileLayout, statsMobileLayout, victoryMobileLayout, quoteMobileLayout, englishMobileLayout }, null, 2));

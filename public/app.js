@@ -17,6 +17,121 @@ const ui = {
   orderCountdownTimer: null,
 };
 
+const RULES = {
+  "zh-CN": [
+    {
+      title: "目标与开局",
+      items: [
+        "每位玩家以 $1,500 开局；让其他玩家破产，成为最后仍在场的玩家即可获胜。",
+        "所有玩家先掷骰决定行动顺序；总点数相同的玩家继续加赛。",
+        "经过起点可领取 $200。机会、公益基金与税费格会立即结算对应事件。",
+      ],
+    },
+    {
+      title: "回合流程",
+      items: [
+        "轮到你时掷两颗骰子并按总点数移动。掷出双骰通常可再行动一次。",
+        "连续三次掷出双骰会直接进入留置所。",
+        "本回合行动完成后仍可管理资产或发起交易，最后点击结束回合。",
+      ],
+    },
+    {
+      title: "购买、租金与拍卖",
+      items: [
+        "落在无人持有的地产、铁路或公共设施时，可以按标价购买；放弃购买会进入全员拍卖。",
+        "落在他人未抵押的资产上需要支付租金。完整持有一个颜色组且尚未建房时，基础租金翻倍。",
+        "铁路租金随持有数量增加；公共设施租金按骰子总点数计算。",
+      ],
+    },
+    {
+      title: "建造与出售",
+      items: [
+        "拥有完整颜色组且组内没有抵押资产时，才能购买房屋和旅馆。",
+        "同色组必须均匀建造与出售；每块地产最多四栋房屋，下一层升级为旅馆。",
+        "出售建筑可收回建筑价格的一半。银行共有 32 栋房屋和 12 家旅馆。",
+      ],
+    },
+    {
+      title: "抵押、交易与债务",
+      items: [
+        "没有建筑的资产可以抵押并获得标价的一半；抵押资产不收租，赎回时需支付 10% 利息。",
+        "玩家可交换现金和多块资产。有建筑的颜色组不能交易；抵押资产转手时接收方需支付手续费。",
+        "现金不足时可出售建筑或抵押资产。仍无法偿债则可宣告破产，资产按债权关系转移或归还银行。",
+      ],
+    },
+    {
+      title: "留置所",
+      items: [
+        "进入留置所后可支付 $50、使用免费离所卡，或尝试掷出双骰离开。",
+        "第三回合仍未掷出双骰时必须支付 $50，然后按当次点数移动。",
+      ],
+    },
+    {
+      title: "房间设置",
+      items: [
+        "随机模式由服务器掷骰；自选模式允许真人玩家选择两颗骰子的点数，适合沙盒或轻松体验。",
+        "游戏状态由服务器统一判定。刷新页面后可用当前浏览器中的房间会话继续游戏。",
+      ],
+    },
+  ],
+  en: [
+    {
+      title: "Goal and setup",
+      items: [
+        "Each player starts with $1,500. Bankrupt every opponent and be the last active player to win.",
+        "All players roll to determine turn order. Tied players roll again.",
+        "Collect $200 when passing GO. Chance, Community Chest, and tax spaces resolve immediately.",
+      ],
+    },
+    {
+      title: "Turn flow",
+      items: [
+        "Roll two dice and move by the total. Rolling doubles normally grants another action.",
+        "Rolling doubles three times in a row sends you directly to jail.",
+        "After moving, you may manage assets or propose a trade before ending your turn.",
+      ],
+    },
+    {
+      title: "Buying, rent, and auctions",
+      items: [
+        "When you land on an unowned property, railroad, or utility, you may buy it at face value. Declining starts an open auction.",
+        "Landing on another player's unmortgaged asset requires rent. Owning a complete color group doubles its undeveloped base rent.",
+        "Railroad rent increases with the number owned. Utility rent is based on the dice total.",
+      ],
+    },
+    {
+      title: "Building and selling",
+      items: [
+        "You may build only after owning a complete color group with no mortgaged property in that group.",
+        "Buildings must be added and sold evenly. Four houses upgrade to a hotel on the next level.",
+        "Selling a building returns half its cost. The bank holds 32 houses and 12 hotels.",
+      ],
+    },
+    {
+      title: "Mortgages, trades, and debt",
+      items: [
+        "An asset without buildings can be mortgaged for half its price. Mortgaged assets collect no rent and cost 10% interest to unmortgage.",
+        "Players may exchange cash and multiple assets. Groups with buildings cannot be traded, and transferred mortgages charge a fee.",
+        "If short on cash, sell buildings or mortgage assets. If the debt still cannot be paid, declare bankruptcy.",
+      ],
+    },
+    {
+      title: "Jail",
+      items: [
+        "Leave jail by paying $50, using a Get Out of Jail Free card, or rolling doubles.",
+        "After the third failed doubles attempt, you must pay $50 and move by that roll.",
+      ],
+    },
+    {
+      title: "Room settings",
+      items: [
+        "Random mode uses server-generated dice. Choose mode lets human players select both dice for sandbox or relaxed play.",
+        "The server validates all game state. The current browser can resume its room session after a refresh.",
+      ],
+    },
+  ],
+};
+
 const elements = {
   home: document.querySelector("#home-view"),
   lobby: document.querySelector("#lobby-view"),
@@ -44,10 +159,12 @@ const elements = {
   toast: document.querySelector("#toast"),
 };
 
-const languageSelect = document.querySelector("#language-select");
-languageSelect.value = window.I18N?.locale || "zh-CN";
-languageSelect.addEventListener("change", () => window.I18N?.setLocale(languageSelect.value));
+const languageToggle = document.querySelector("#language-toggle");
 window.I18N?.localize(document);
+renderLanguageToggle();
+languageToggle.addEventListener("click", () => {
+  window.I18N?.setLocale(window.I18N.locale === "en" ? "zh-CN" : "en");
+});
 
 document.querySelectorAll("[data-entry-tab]").forEach((button) => {
   button.addEventListener("click", () => switchEntryTab(button.dataset.entryTab));
@@ -596,7 +713,7 @@ function renderBoard() {
       ${groupColor ? `<span class="group-strip" style="--group-color:${groupColor}"></span>` : ""}
       ${specialIcon(space)}
       <span class="cell-name">${escapeHtml(space.name)}</span>
-      ${state?.houses ? `<span class="building-count">${state.houses === 5 ? "旅馆" : `房屋×${state.houses}`}</span>` : '<span class="building-count"></span>'}
+      ${buildingCountMarkup(state, space)}
       ${space.price ? `<span class="cell-price">$${space.price}</span>` : ""}
       ${state?.mortgaged ? '<span class="mortgage-mark">已抵押</span>' : ""}
       ${isLastMove ? '<span class="arrival-mark">刚到</span>' : ""}`;
@@ -715,7 +832,7 @@ function fitBoardLabels() {
   elements.board.querySelectorAll(".cell-name").forEach((label) => {
     label.style.fontSize = "";
     let size = Number.parseFloat(getComputedStyle(label).fontSize);
-    const minimum = 5;
+    const minimum = 4;
     while (size > minimum && (label.scrollHeight > label.clientHeight + 1 || label.scrollWidth > label.clientWidth + 1)) {
       size -= 0.5;
       label.style.fontSize = `${size}px`;
@@ -987,8 +1104,41 @@ function renderPanel() {
   if (ui.panelTab === "assets") renderAssets();
   else if (ui.panelTab === "log") renderLog();
   else if (ui.panelTab === "stats") renderStats();
+  else if (ui.panelTab === "rules") renderRules();
   else renderPlayers();
   window.I18N?.localize(elements.panel);
+}
+
+function renderRules() {
+  const sections = RULES[window.I18N?.locale === "en" ? "en" : "zh-CN"];
+  elements.panel.innerHTML = `<div class="rules-guide">
+    ${sections.map((section, sectionIndex) => `
+      <section class="rules-section">
+        <h3><span>${sectionIndex + 1}</span>${escapeHtml(section.title)}</h3>
+        <ul>${section.items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+      </section>`).join("")}
+  </div>`;
+}
+
+function renderLanguageToggle() {
+  const switchToChinese = window.I18N?.locale === "en";
+  languageToggle.querySelector("span").textContent = switchToChinese ? "中文" : "English";
+  languageToggle.setAttribute("aria-label", switchToChinese ? "Switch to Chinese" : "切换到英文");
+  languageToggle.title = switchToChinese ? "Switch to Chinese" : "切换到英文";
+}
+
+function buildingCountMarkup(state, space = { type: "property" }) {
+  const houses = Number(state?.houses || 0);
+  if (!houses) return space.type === "property" ? '<span class="building-count"></span>' : "";
+  const isHotel = houses === 5;
+  const label = isHotel ? "旅馆" : `房屋×${houses}`;
+  const markers = isHotel
+    ? '<i class="hotel-marker"></i>'
+    : Array.from({ length: houses }, () => "<i></i>").join("");
+  return `<span class="building-count has-buildings ${isHotel ? "has-hotel" : ""}" title="${label}" aria-label="${label}">
+    <span class="building-label">${label}</span>
+    <span class="building-markers" aria-hidden="true">${markers}</span>
+  </span>`;
 }
 
 function renderPlayers() {

@@ -21,6 +21,7 @@
     "资产": "Assets",
     "记录": "Log",
     "统计": "Stats",
+    "规则": "Rules",
     "地图视图": "Map view",
     "缩小地图": "Zoom out",
     "重置缩放": "Reset zoom",

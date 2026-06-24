@@ -127,21 +127,39 @@ svg {
 
 .language-control {
   margin-left: auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  color: #cbd3d8;
-  font-size: 12px;
+  flex: 0 0 auto;
 }
 
-.language-control select {
-  height: 32px;
-  min-width: 92px;
-  padding: 0 26px 0 9px;
-  border: 1px solid #637078;
-  border-radius: 4px;
-  background: #253038;
-  color: #fff;
+.language-toggle {
+  height: 38px;
+  min-width: 104px;
+  padding: 0 13px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 2px solid var(--gold);
+  border-radius: 5px;
+  background: #fff;
+  color: #172228;
+  font-size: 13px;
+  font-weight: 850;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.16);
+}
+
+.language-toggle:hover {
+  background: #fff7d6;
+  border-color: #f1ca35;
+}
+
+.language-toggle:focus-visible {
+  outline: 3px solid rgba(255, 255, 255, 0.82);
+  outline-offset: 2px;
+}
+
+.language-toggle svg {
+  width: 18px;
+  height: 18px;
 }
 
 .connection span {
@@ -742,6 +760,10 @@ html[lang="en"] .cell-name {
   font-weight: 800;
 }
 
+.building-markers {
+  display: none;
+}
+
 .mortgage-mark {
   position: absolute;
   inset: auto 2px 2px 2px;
@@ -1187,7 +1209,7 @@ html[lang="en"] .cell-name {
 }
 
 .panel-tabs {
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   flex: 0 0 auto;
 }
 
@@ -1204,6 +1226,52 @@ html[lang="en"] .cell-name {
   min-height: 0;
   padding: 8px 14px;
   overflow: auto;
+}
+
+.rules-guide {
+  padding: 2px 4px 18px;
+}
+
+.rules-section {
+  padding: 14px 2px;
+  border-bottom: 1px solid var(--line);
+}
+
+.rules-section:last-child {
+  border-bottom: 0;
+}
+
+.rules-section h3 {
+  margin: 0 0 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--green-dark);
+  font-size: 14px;
+}
+
+.rules-section h3 span {
+  width: 23px;
+  height: 23px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border: 1px solid #8ba89b;
+  border-radius: 50%;
+  background: #eef6f2;
+  font-size: 11px;
+}
+
+.rules-section ul {
+  margin: 0;
+  padding-left: 19px;
+  color: #46545c;
+}
+
+.rules-section li {
+  margin: 6px 0;
+  line-height: 1.5;
+  font-size: 12px;
 }
 
 .player-row {
@@ -1943,15 +2011,17 @@ html[lang="en"] .cell-name {
     font-size: 0;
   }
 
-  .language-control > span {
-    display: none;
+  .language-toggle {
+    min-width: 84px;
+    height: 34px;
+    padding: 0 9px;
+    gap: 5px;
+    font-size: 12px;
   }
 
-  .language-control select {
-    min-width: 76px;
-    height: 30px;
-    padding-left: 7px;
-    font-size: 11px;
+  .language-toggle svg {
+    width: 16px;
+    height: 16px;
   }
 
   .home-view,
@@ -2066,8 +2136,7 @@ html[lang="en"] .cell-name {
   }
 
   .cell-icon {
-    width: 12px;
-    height: 12px;
+    display: none;
   }
 
   html[lang="en"] .board-cell .cell-icon {
@@ -2079,9 +2148,68 @@ html[lang="en"] .cell-name {
     line-height: 1.05;
   }
 
-  .cell-price,
-  .building-count {
+  .cell-price {
     display: none;
+  }
+
+  .building-count.has-buildings {
+    position: absolute;
+    z-index: 4;
+    min-height: 0;
+    padding: 2px;
+    display: flex;
+    align-items: center;
+    border: 1px solid rgba(42, 53, 59, 0.42);
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.94);
+    box-shadow: 0 1px 2px rgba(24, 32, 37, 0.22);
+  }
+
+  .side-top .building-count {
+    top: 2px;
+    right: 2px;
+  }
+
+  .side-bottom .building-count {
+    right: 2px;
+    bottom: 2px;
+  }
+
+  .side-left .building-count {
+    top: 2px;
+    left: 2px;
+  }
+
+  .side-right .building-count {
+    top: 2px;
+    right: 2px;
+  }
+
+  .building-label {
+    display: none;
+  }
+
+  .building-markers {
+    min-width: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1px;
+  }
+
+  .building-markers i {
+    width: 3px;
+    height: 5px;
+    display: block;
+    border: 1px solid #176b4a;
+    background: #2f9b6d;
+  }
+
+  .building-markers .hotel-marker {
+    width: 9px;
+    height: 6px;
+    border-color: #8e2830;
+    background: #cf3e48;
   }
 
   .group-strip {
@@ -2334,6 +2462,25 @@ html[lang="en"] .cell-name {
 
   .game-panel {
     min-height: 360px;
+  }
+
+  .panel-tab {
+    min-height: 42px;
+    gap: 3px;
+    font-size: 11px;
+  }
+
+  .panel-tab svg {
+    width: 15px;
+    height: 15px;
+  }
+
+  .rules-section {
+    padding: 12px 0;
+  }
+
+  .rules-section li {
+    font-size: 11px;
   }
 
   .trade-header {
