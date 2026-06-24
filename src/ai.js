@@ -18,6 +18,11 @@ function chooseAiAction(game, playerId) {
   const player = game.players.find((candidate) => candidate.id === playerId);
   if (!player || player.kind !== "ai" || player.bankrupt) return null;
 
+  if (game.phase === "card_confirmation") {
+    if (game.pendingCard?.playerId !== playerId) return null;
+    return { type: "confirm_card" };
+  }
+
   if (game.phase === "trade") {
     if (game.trade?.targetId !== playerId) return null;
     return { type: aiAcceptsTrade(game, playerId) ? "accept_trade" : "reject_trade" };

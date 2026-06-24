@@ -24,7 +24,7 @@ const RULES = {
       items: [
         "每位玩家以 $1,500 开局；让其他玩家破产，成为最后仍在场的玩家即可获胜。",
         "所有玩家先掷骰决定行动顺序；总点数相同的玩家继续加赛。",
-        "经过起点可领取 $200。机会、公益基金与税费格会立即结算对应事件。",
+        "经过起点可领取 $200。机会卡会先展示并等待本人确认，公益基金与税费格会直接结算。",
       ],
     },
     {
@@ -71,6 +71,7 @@ const RULES = {
       items: [
         "随机模式由服务器掷骰；自选模式允许真人玩家选择两颗骰子的点数，适合沙盒或轻松体验。",
         "游戏状态由服务器统一判定。刷新页面后可用当前浏览器中的房间会话继续游戏。",
+        "观察者可以在开局前或游戏进行中进入房间查看棋盘，但不能掷骰、交易或管理资产。",
       ],
     },
   ],
@@ -80,7 +81,7 @@ const RULES = {
       items: [
         "Each player starts with $1,500. Bankrupt every opponent and be the last active player to win.",
         "All players roll to determine turn order. Tied players roll again.",
-        "Collect $200 when passing GO. Chance, Community Chest, and tax spaces resolve immediately.",
+        "Collect $200 when passing GO. Chance cards wait for the drawing player to confirm; Community Chest and tax spaces resolve immediately.",
       ],
     },
     {
@@ -127,6 +128,7 @@ const RULES = {
       items: [
         "Random mode uses server-generated dice. Choose mode lets human players select both dice for sandbox or relaxed play.",
         "The server validates all game state. The current browser can resume its room session after a refresh.",
+        "Spectators may enter before or during a game to watch the board, but cannot roll, trade, or manage assets.",
       ],
     },
   ],
@@ -156,6 +158,8 @@ const elements = {
   tradeContent: document.querySelector("#trade-content"),
   victoryDialog: document.querySelector("#victory-dialog"),
   victoryContent: document.querySelector("#victory-content"),
+  cardDialog: document.querySelector("#card-dialog"),
+  cardContent: document.querySelector("#card-content"),
   toast: document.querySelector("#toast"),
 };
 
@@ -184,6 +188,14 @@ document.querySelector("#join-form").addEventListener("submit", async (event) =>
   await enterRoom(() => api(`/api/rooms/${encodeURIComponent(code)}/join`, { method: "POST", body: { name } }));
 });
 
+document.querySelector("#watch-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  const code = String(form.get("code") || "").trim().toUpperCase();
+  const name = form.get("name");
+  await enterRoom(() => api(`/api/rooms/${encodeURIComponent(code)}/watch`, { method: "POST", body: { name } }));
+});
+
 document.querySelector("#copy-room").addEventListener("click", copyInvite);
 document.querySelector("#lobby-actions").addEventListener("click", handleLobbyClick);
 document.querySelector("#lobby-players").addEventListener("click", handleLobbyClick);
@@ -201,6 +213,7 @@ elements.tradeContent.addEventListener("submit", handleTradeSubmit);
 document.querySelector(".dialog-close").addEventListener("click", () => elements.dialog.close());
 document.querySelector(".trade-close").addEventListener("click", () => elements.tradeDialog.close());
 elements.victoryDialog.addEventListener("click", handleVictoryClick);
+elements.cardDialog.addEventListener("click", handleCardClick);
 document.querySelectorAll("[data-panel-tab]").forEach((button) => {
   button.addEventListener("click", () => {
     ui.panelTab = button.dataset.panelTab;
@@ -226,6 +239,7 @@ async function initialize() {
   const roomFromUrl = new URLSearchParams(location.search).get("room");
   if (roomFromUrl) {
     document.querySelector("#join-code").value = roomFromUrl.toUpperCase().slice(0, 5);
+    document.querySelector("#watch-code").value = roomFromUrl.toUpperCase().slice(0, 5);
     switchEntryTab("join");
   }
 
@@ -251,6 +265,7 @@ function switchEntryTab(tab) {
   });
   document.querySelector("#create-form").hidden = tab !== "create";
   document.querySelector("#join-form").hidden = tab !== "join";
+  document.querySelector("#watch-form").hidden = tab !== "watch";
 }
 
 async function enterRoom(request) {
@@ -462,6 +477,11 @@ function handlePanelClick(event) {
 }
 
 function handleCenterClick(event) {
+  const tradeAsset = event.target.closest("[data-trade-space-index]");
+  if (tradeAsset) {
+    openProperty(Number(tradeAsset.dataset.tradeSpaceIndex));
+    return;
+  }
   const button = event.target.closest("[data-action]");
   if (!button) return;
   const type = button.dataset.action;
@@ -588,6 +608,7 @@ function render() {
 
   elements.roomMeta.innerHTML = `
     <span>房间 <strong>${escapeHtml(ui.state.code)}</strong></span>
+    ${ui.state.viewerRole === "spectator" ? '<span class="spectator-badge">观战中</span>' : ""}
     <button class="icon-button" type="button" data-copy-room title="复制邀请链接" aria-label="复制邀请链接">
       <svg aria-hidden="true"><use href="/icons.svg#copy"></use></svg>
     </button>
@@ -603,7 +624,8 @@ function render() {
 function renderLobby() {
   document.querySelector("#lobby-code").textContent = ui.state.code;
   document.querySelector("#lobby-count").textContent = `${ui.state.players.length} / 6`;
-  const isHost = ui.state.viewerId === ui.state.hostId;
+  const isHost = ui.state.viewerRole === "player" && ui.state.viewerId === ui.state.hostId;
+  const isSpectator = ui.state.viewerRole === "spectator";
   document.querySelector("#lobby-players").innerHTML = ui.state.players.map((player) => `
     <div class="lobby-player">
       <span class="token-dot" style="background:${player.color}"></span>
@@ -637,7 +659,7 @@ function renderLobby() {
     </button>
     <button class="primary-button" type="button" data-start ${ui.state.players.length < 2 ? "disabled" : ""}>
       <svg aria-hidden="true"><use href="/icons.svg#play"></use></svg>开始游戏
-    </button>` : '<span class="subtext">等待房主开始游戏</span>';
+    </button>` : `<span class="subtext">${isSpectator ? "你正在以观察者身份等待游戏开始" : "等待房主开始游戏"}</span>`;
 }
 
 function renderGame() {
@@ -645,6 +667,7 @@ function renderGame() {
   renderCenter();
   renderPanel();
   elements.bank.innerHTML = `<span>银行房屋 <strong>${ui.state.bank.houses}</strong></span><span>银行旅馆 <strong>${ui.state.bank.hotels}</strong></span>`;
+  renderCardDialog();
   renderVictoryDialog();
   scheduleBoardLayout();
 }
@@ -658,6 +681,7 @@ function renderVictoryDialog() {
   ui.victoryShownFor = key;
   if (elements.dialog.open) elements.dialog.close();
   if (elements.tradeDialog.open) elements.tradeDialog.close();
+  if (elements.cardDialog.open) elements.cardDialog.close();
   elements.victoryContent.innerHTML = `
     <div class="victory-banner" style="--winner-color:${winner?.color || "#d8a91f"}">
       <div class="victory-trophy"><svg aria-hidden="true"><use href="/icons.svg#trophy"></use></svg></div>
@@ -684,6 +708,39 @@ function handleVictoryClick(event) {
     history.replaceState(null, "", "/");
     render();
   }
+}
+
+function handleCardClick(event) {
+  if (!event.target.closest("[data-confirm-card]")) return;
+  sendAction({ type: "confirm_card" });
+}
+
+function renderCardDialog() {
+  const pending = ui.state.pendingCard;
+  if (!pending) {
+    if (elements.cardDialog.open) elements.cardDialog.close();
+    return;
+  }
+  const player = playerById(pending.playerId);
+  const canConfirm = ui.state.viewerRole === "player" && ui.state.viewerId === pending.playerId;
+  elements.cardContent.innerHTML = `
+    <article class="card-reveal">
+      <header>
+        <svg aria-hidden="true"><use href="/icons.svg#help"></use></svg>
+        <span>机会卡</span>
+      </header>
+      <div class="card-reveal-body">
+        <span class="card-player"><i style="background:${player?.color || "#7e8a91"}"></i>${escapeHtml(player?.name || "玩家")} 抽到</span>
+        <p>${escapeHtml(pending.text)}</p>
+      </div>
+      <footer>
+        ${canConfirm
+          ? '<button class="primary-button" type="button" data-confirm-card>确认并继续</button>'
+          : `<span>等待 ${escapeHtml(player?.name || "玩家")} 确认</span>`}
+      </footer>
+    </article>`;
+  window.I18N?.localize(elements.cardContent);
+  if (!elements.cardDialog.open) elements.cardDialog.showModal();
 }
 
 function renderBoard() {
@@ -853,6 +910,8 @@ function renderCenter() {
   const current = playerById(ui.state.currentPlayerId);
   const dice = ui.state.turn?.dice || [];
   const isViewerTurn = viewerNeedsDecision();
+  const isSpectator = ui.state.viewerRole === "spectator";
+  const promptTitle = isSpectator ? "观战模式" : isViewerTurn ? "需要你决定" : "其他玩家回合";
   elements.center.classList.toggle("has-summary", Boolean(ui.state.turnSummary));
   elements.center.innerHTML = `
     <img class="center-mark" src="/board-mark.svg" alt="" />
@@ -863,8 +922,8 @@ function renderCenter() {
     <div class="dice-row" aria-label="骰子点数">
       <span class="die">${dice[0] || "-"}</span><span class="die">${dice[1] || "-"}</span>
     </div>
-    <section class="turn-prompt ${isViewerTurn ? "is-mine" : "is-waiting"}" aria-label="${isViewerTurn ? "需要你决定" : "其他玩家回合"}">
-      <header><span class="prompt-status-dot"></span><strong>${isViewerTurn ? "需要你决定" : "其他玩家回合"}</strong></header>
+    <section class="turn-prompt ${isViewerTurn ? "is-mine" : "is-waiting"} ${isSpectator ? "is-spectating" : ""}" aria-label="${promptTitle}">
+      <header><span class="prompt-status-dot"></span><strong>${promptTitle}</strong></header>
       <p class="phase-message">${phaseMessage()}</p>
       <div class="center-actions">${centerActions()}</div>
     </section>
@@ -951,6 +1010,7 @@ function viewerNeedsDecision() {
   if (!viewerId || ui.state.status !== "playing") return false;
   if (ui.state.phase === "determining_order") return ui.state.openingOrder?.pendingIds.includes(viewerId);
   if (ui.state.phase === "trade") return ui.state.trade?.targetId === viewerId || ui.state.trade?.proposerId === viewerId;
+  if (ui.state.phase === "card_confirmation") return ui.state.pendingCard?.playerId === viewerId;
   if (ui.state.phase === "auction") return ui.state.auction?.currentPlayerId === viewerId;
   if (ui.state.phase === "debt") return ui.state.debt?.payerId === viewerId;
   return ui.state.currentPlayerId === viewerId;
@@ -998,7 +1058,12 @@ function phaseMessage() {
   if (ui.state.phase === "trade" && ui.state.trade) {
     const proposer = playerById(ui.state.trade.proposerId);
     const target = playerById(ui.state.trade.targetId);
-    return `${escapeHtml(proposer?.name || "玩家")} 向 ${escapeHtml(target?.name || "玩家")} 提议：${tradeBundleText(ui.state.trade.offer)}，换取 ${tradeBundleText(ui.state.trade.request)}`;
+    return `<span class="trade-message-lead">${escapeHtml(proposer?.name || "玩家")} 向 ${escapeHtml(target?.name || "玩家")} 提议</span>
+      <span class="trade-message-bundles">${tradeBundleMarkup(ui.state.trade.offer)}<b>换取</b>${tradeBundleMarkup(ui.state.trade.request)}</span>`;
+  }
+  if (ui.state.phase === "card_confirmation" && ui.state.pendingCard) {
+    const player = playerById(ui.state.pendingCard.playerId);
+    return `等待 ${escapeHtml(player?.name || "玩家")} 确认机会卡`;
   }
   if (ui.state.phase === "auction") {
     const space = ui.state.board[ui.state.auction.spaceIndex];
@@ -1341,10 +1406,23 @@ function tradePropertyOptions(spaces, fieldName) {
   }).join("");
 }
 
-function tradeBundleText(bundle) {
-  const parts = bundle.properties.map((index) => escapeHtml(ui.state.board[index].name));
-  if (bundle.cash > 0) parts.push(`$${money(bundle.cash)} 现金`);
-  return parts.join(" + ") || "无内容";
+function tradeBundleMarkup(bundle) {
+  const parts = bundle.properties.map((index) => {
+    const space = ui.state.board[index];
+    const color = tradeAssetColor(space);
+    return `<button class="trade-asset-chip" type="button" data-trade-space-index="${space.index}" title="${escapeHtml(space.name)}">
+      <i style="background:${color}"></i><span>${escapeHtml(space.name)}</span>
+    </button>`;
+  });
+  if (bundle.cash > 0) parts.push(`<span class="trade-cash-chip">$${money(bundle.cash)} 现金</span>`);
+  return `<span class="trade-bundle">${parts.join("") || '<span class="trade-cash-chip">无内容</span>'}</span>`;
+}
+
+function tradeAssetColor(space) {
+  if (space.group) return ui.state.groups[space.group]?.color || "#7c878d";
+  if (space.type === "railroad") return "#59666d";
+  if (space.type === "utility") return "#2d7f8a";
+  return "#7c878d";
 }
 
 function openProperty(index) {

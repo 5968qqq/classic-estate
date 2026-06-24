@@ -59,6 +59,13 @@ async function handleApi(request, response, url) {
     return;
   }
 
+  const watchMatch = url.pathname.match(/^\/api\/rooms\/([A-Z0-9]+)\/watch$/i);
+  if (request.method === "POST" && watchMatch) {
+    const body = await readJson(request);
+    sendJson(response, 200, rooms.watch(watchMatch[1], body.name));
+    return;
+  }
+
   const stateMatch = url.pathname.match(/^\/api\/rooms\/([A-Z0-9]+)\/state$/i);
   if (request.method === "GET" && stateMatch) {
     sendJson(response, 200, rooms.state(stateMatch[1], url.searchParams.get("token")));
@@ -160,7 +167,7 @@ function consumeRateLimit(request, url) {
   const now = Date.now();
   const isStateRead = request.method === "GET" && /\/state$/.test(url.pathname);
   const isEntry = request.method === "POST"
-    && (url.pathname === "/api/rooms" || /\/join$/.test(url.pathname));
+    && (url.pathname === "/api/rooms" || /\/(join|watch)$/.test(url.pathname));
   const tier = isStateRead ? "state" : isEntry ? "entry" : "action";
   const limit = tier === "state" ? 150 : tier === "entry" ? 30 : 180;
   const sessionKey = isStateRead ? url.searchParams.get("token") || "anonymous" : "shared";

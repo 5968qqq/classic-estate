@@ -117,6 +117,16 @@ svg {
   font-size: 15px;
 }
 
+.spectator-badge {
+  padding: 3px 7px;
+  border: 1px solid #8ac2d1;
+  border-radius: 4px;
+  background: #173f4b;
+  color: #dff7ff;
+  font-size: 11px;
+  font-weight: 800;
+}
+
 .connection {
   display: inline-flex;
   align-items: center;
@@ -202,6 +212,10 @@ svg {
   border-bottom: 1px solid var(--line);
 }
 
+.mode-tabs {
+  grid-template-columns: repeat(3, 1fr);
+}
+
 .tab-button,
 .panel-tab {
   min-height: 46px;
@@ -244,6 +258,18 @@ input {
 #join-code {
   text-transform: uppercase;
   font-weight: 800;
+}
+
+#watch-code {
+  text-transform: uppercase;
+  font-weight: 800;
+}
+
+.watch-button {
+  margin-top: 8px;
+  border-color: #397287;
+  background: #eef8fb;
+  color: #245b6e;
 }
 
 .primary-button,
@@ -1009,6 +1035,77 @@ html[lang="en"] .cell-name {
   box-shadow: 0 0 0 3px rgba(210, 154, 16, 0.18);
 }
 
+.turn-prompt.is-spectating {
+  border-left-color: #397287;
+  background: rgba(238, 248, 251, 0.88);
+}
+
+.turn-prompt.is-spectating header {
+  color: #245b6e;
+}
+
+.turn-prompt.is-spectating .prompt-status-dot {
+  background: #2d7f8a;
+}
+
+.trade-message-lead {
+  display: block;
+  margin-bottom: 5px;
+}
+
+.trade-message-bundles {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.trade-message-bundles > b {
+  color: #6b7479;
+  font-size: 10px;
+}
+
+.trade-bundle {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px;
+}
+
+.trade-asset-chip,
+.trade-cash-chip {
+  min-height: 25px;
+  padding: 3px 7px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid #aab5bb;
+  border-radius: 4px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 10px;
+  font-weight: 750;
+  line-height: 1.15;
+}
+
+.trade-asset-chip:hover {
+  border-color: #64737b;
+  background: #f5f7f8;
+}
+
+.trade-asset-chip i {
+  width: 6px;
+  align-self: stretch;
+  flex: 0 0 6px;
+  border-radius: 2px;
+}
+
+.trade-cash-chip {
+  border-color: #b9a668;
+  background: #fff9df;
+}
+
 .center-actions {
   width: min(100%, 430px);
   min-height: 44px;
@@ -1618,6 +1715,87 @@ html[lang="en"] .cell-name {
   border-radius: 6px;
   color: var(--ink);
   box-shadow: 0 24px 70px rgba(14, 20, 24, 0.42);
+}
+
+.card-dialog {
+  width: min(90vw, 430px);
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid #b58b18;
+  border-radius: 6px;
+  color: var(--ink);
+  box-shadow: 0 24px 70px rgba(14, 20, 24, 0.42);
+}
+
+.card-dialog::backdrop {
+  background: rgba(14, 20, 24, 0.68);
+}
+
+.card-reveal > header {
+  min-height: 62px;
+  padding: 14px 20px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid #d9c984;
+  background: #f0c83e;
+  color: #443607;
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.card-reveal > header svg {
+  width: 28px;
+  height: 28px;
+}
+
+.card-reveal-body {
+  padding: 26px 24px;
+  background: #fffdf4;
+  text-align: center;
+}
+
+.card-player {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #647078;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.card-player i {
+  width: 12px;
+  height: 12px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px #59666d;
+}
+
+.card-reveal-body p {
+  margin: 14px 0 2px;
+  color: #182025;
+  font-size: 21px;
+  font-weight: 850;
+  line-height: 1.45;
+}
+
+.card-reveal > footer {
+  min-height: 66px;
+  padding: 12px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-top: 1px solid #ded7bd;
+  background: #fff;
+  color: #647078;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.card-reveal > footer .primary-button {
+  min-width: 150px;
+  margin-top: 0;
 }
 
 .victory-dialog::backdrop {

@@ -59,6 +59,26 @@ let serverProcess;
   await page.locator("[data-start]").click();
   await page.locator("#game-view").waitFor({ state: "visible" });
   await partnerPage.locator("#game-view").waitFor({ state: "visible" });
+
+  const spectatorContext = await browser.newContext({ viewport: { width: 1100, height: 800 } });
+  const spectatorPage = await spectatorContext.newPage();
+  spectatorPage.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(`spectator: ${message.text()}`);
+  });
+  await spectatorPage.goto(`http://127.0.0.1:3107?room=${roomCode}`, { waitUntil: "domcontentloaded" });
+  await spectatorPage.locator('[data-entry-tab="watch"]').click();
+  await spectatorPage.locator("#watch-name").fill("Observer");
+  await spectatorPage.locator("#watch-form button[type=submit]").click();
+  await spectatorPage.locator("#game-view").waitFor({ state: "visible" });
+  assert.equal(await spectatorPage.locator(".spectator-badge").textContent(), "观战中");
+  assert.equal(await spectatorPage.locator(".opening-roll-button").count(), 0);
+  assert.equal(await spectatorPage.locator(".lobby-player").count(), 0);
+  await spectatorPage.screenshot({ path: path.join(outputDir, "spectator-desktop.png"), fullPage: true });
+  await spectatorPage.setViewportSize({ width: 390, height: 844 });
+  assert.equal(await spectatorPage.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), 0);
+  await spectatorPage.screenshot({ path: path.join(outputDir, "spectator-mobile.png"), fullPage: true });
+  await spectatorContext.close();
+
   assert.equal(await page.locator(".opening-order-row").count(), 2);
   for (let attempt = 0; attempt < 6; attempt += 1) {
     for (const candidate of [page, partnerPage]) {
@@ -201,6 +221,15 @@ let serverProcess;
   await nextPage.bringToFront();
   await nextPage.reload({ waitUntil: "domcontentloaded" });
   await nextPage.locator('[data-action="accept_trade"]').waitFor({ state: "visible" });
+  assert.equal(await nextPage.locator(".phase-message .trade-asset-chip").count(), 2);
+  const tradeChipColors = await nextPage.locator(".phase-message .trade-asset-chip i").evaluateAll((markers) => (
+    markers.map((marker) => getComputedStyle(marker).backgroundColor)
+  ));
+  assert.equal(new Set(tradeChipColors).size, 2);
+  assert.ok(tradeChipColors.every((color) => color !== "rgba(0, 0, 0, 0)"));
+  await nextPage.locator(".phase-message .trade-asset-chip").first().click();
+  await nextPage.locator("#property-dialog").waitFor({ state: "visible" });
+  await nextPage.locator("#property-dialog .dialog-close").click();
   await nextPage.locator('[data-action="accept_trade"]').click();
   await turnPage.locator('[data-asset-index="6"]').waitFor({ state: "visible" });
   assert.equal(await turnPage.locator('[data-asset-index="5"]').count(), 0);
@@ -384,6 +413,53 @@ let serverProcess;
   await quotePage.screenshot({ path: path.join(outputDir, "ai-quote-mobile.png"), fullPage: true });
   await quoteContext.close();
 
+  const cardContext = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  const cardPage = await cardContext.newPage();
+  cardPage.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(`card: ${message.text()}`);
+  });
+  await cardPage.goto("http://127.0.0.1:3107", { waitUntil: "domcontentloaded" });
+  await cardPage.locator("#create-name").fill("Card Player");
+  await cardPage.locator("#create-form button[type=submit]").click();
+  await cardPage.locator("#lobby-view").waitFor({ state: "visible" });
+  await cardPage.locator("[data-add-ai]").click();
+  await cardPage.waitForFunction(() => document.querySelectorAll(".lobby-player").length === 2);
+  await cardPage.locator('[data-dice-mode="choice"]').click();
+  await cardPage.waitForFunction(() => document.querySelector('[data-dice-mode="choice"]')?.classList.contains("active"));
+  await cardPage.locator("[data-start]").click();
+  await cardPage.locator("#game-view").waitFor({ state: "visible" });
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    const orderRoll = cardPage.locator('[data-action="roll_for_order"]');
+    if (await orderRoll.isVisible()) await orderRoll.click();
+    await cardPage.waitForTimeout(650);
+    if (await cardPage.locator(".opening-countdown").isVisible()) break;
+  }
+  await cardPage.locator('[data-action="roll"]').waitFor({ state: "visible", timeout: 20_000 });
+  await cardPage.locator("#die-one").selectOption("3");
+  await cardPage.locator("#die-two").selectOption("4");
+  await cardPage.locator('[data-action="roll"]').click();
+  await cardPage.locator("#card-dialog").waitFor({ state: "visible" });
+  assert.match(await cardPage.locator("#card-content").textContent(), /机会卡/);
+  assert.equal(await cardPage.locator("[data-confirm-card]").count(), 1);
+  await cardPage.screenshot({ path: path.join(outputDir, "chance-confirm-desktop.png"), fullPage: true });
+  await cardPage.setViewportSize({ width: 390, height: 844 });
+  const cardMobileLayout = await cardPage.evaluate(() => {
+    const dialog = document.querySelector("#card-dialog").getBoundingClientRect();
+    return {
+      left: dialog.left,
+      right: dialog.right,
+      viewport: document.documentElement.clientWidth,
+      overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    };
+  });
+  assert.ok(cardMobileLayout.left >= 0);
+  assert.ok(cardMobileLayout.right <= cardMobileLayout.viewport + 1);
+  assert.equal(cardMobileLayout.overflow, 0);
+  await cardPage.screenshot({ path: path.join(outputDir, "chance-confirm-mobile.png"), fullPage: true });
+  await cardPage.locator("[data-confirm-card]").click();
+  await cardPage.locator("#card-dialog").waitFor({ state: "hidden" });
+  await cardContext.close();
+
   const englishContext = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   await englishContext.addInitScript(() => localStorage.setItem("classic-estate-language", "en"));
   const englishPage = await englishContext.newPage();
@@ -396,6 +472,7 @@ let serverProcess;
   assert.equal(await englishPage.locator("#language-toggle").getAttribute("aria-label"), "Switch to Chinese");
   assert.equal(await englishPage.locator('[data-entry-tab="create"]').textContent(), "Create Room");
   assert.equal(await englishPage.locator('[data-entry-tab="join"]').textContent(), "Join Room");
+  assert.equal(await englishPage.locator('[data-entry-tab="watch"]').textContent(), "Watch");
   await englishPage.screenshot({ path: path.join(outputDir, "english-home.png"), fullPage: true });
   await englishPage.locator("#create-name").fill("English Player");
   await englishPage.locator("#create-form button[type=submit]").click();

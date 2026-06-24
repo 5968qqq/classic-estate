@@ -32,6 +32,7 @@
             <div class="mode-tabs" role="tablist" aria-label="进入方式">
               <button class="tab-button active" data-entry-tab="create" role="tab" aria-selected="true">创建房间</button>
               <button class="tab-button" data-entry-tab="join" role="tab" aria-selected="false">加入房间</button>
+              <button class="tab-button" data-entry-tab="watch" role="tab" aria-selected="false">观战</button>
             </div>
             <form id="create-form" class="entry-form">
               <label for="create-name">玩家名称</label>
@@ -49,6 +50,16 @@
               <button class="primary-button" type="submit">
                 <svg aria-hidden="true"><use href="/icons.svg#log-in"></use></svg>
                 加入房间
+              </button>
+            </form>
+            <form id="watch-form" class="entry-form" hidden>
+              <label for="watch-name">观战名称</label>
+              <input id="watch-name" name="name" maxlength="12" autocomplete="nickname" placeholder="输入名称" required />
+              <label for="watch-code">房间码</label>
+              <input id="watch-code" name="code" maxlength="5" autocomplete="off" placeholder="ABCDE" required />
+              <button class="secondary-button watch-button" type="submit">
+                <svg aria-hidden="true"><use href="/icons.svg#users"></use></svg>
+                以观察者身份进入
               </button>
             </form>
           </div>
@@ -148,6 +159,10 @@
 
     <dialog id="victory-dialog" class="victory-dialog">
       <div id="victory-content"></div>
+    </dialog>
+
+    <dialog id="card-dialog" class="card-dialog">
+      <div id="card-content"></div>
     </dialog>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>

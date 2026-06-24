@@ -2,6 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const { addPlayer, completeOpeningOrder, createGame, performAction, publicState } = require("../src/game");
 const { aiAcceptsTrade, chooseAiAction, quoteAiTrade } = require("../src/ai");
+const { RoomStore } = require("../src/rooms");
 
 function sequence(values) {
   let index = 0;
@@ -126,6 +127,12 @@ test("本回合保留多段移动路径并在下一回合清空", () => {
 
   performAction(game, first.id, { type: "roll" }, sequence([0.34, 0.51]));
 
+  assert.equal(first.position, 7);
+  assert.equal(game.phase, "card_confirmation");
+  assert.equal(game.pendingCard.playerId, first.id);
+  assert.equal(game.turn.movements.length, 1);
+  performAction(game, first.id, { type: "confirm_card" });
+
   assert.equal(first.position, 4);
   assert.equal(game.turn.movements.length, 2);
   assert.deepEqual(game.turn.movements[0].path, [0, 1, 2, 3, 4, 5, 6, 7]);
@@ -135,6 +142,68 @@ test("本回合保留多段移动路径并在下一回合清空", () => {
   performAction(game, first.id, { type: "end_turn" });
   assert.equal(game.players[game.currentIndex].id, second.id);
   assert.deepEqual(game.turn.movements, []);
+});
+
+test("机会卡必须由抽卡玩家确认后才结算", () => {
+  const { game, first, second } = startedGame();
+  game.decks.chance = ["chance-dividend"];
+
+  performAction(game, first.id, { type: "roll" }, sequence([0.34, 0.51]));
+
+  assert.equal(first.position, 7);
+  assert.equal(first.cash, 1500);
+  assert.equal(game.phase, "card_confirmation");
+  assert.equal(publicState(game, second.id).pendingCard.text, "银行支付股息 $50");
+  assert.throws(
+    () => performAction(game, second.id, { type: "confirm_card" }),
+    /只有抽到机会卡的玩家/,
+  );
+
+  performAction(game, first.id, { type: "confirm_card" });
+  assert.equal(first.cash, 1550);
+  assert.equal(game.pendingCard, null);
+  assert.equal(game.phase, "turn_complete");
+});
+
+test("AI 抽到机会卡后会先确认再继续行动", () => {
+  const game = createGame("AICRD");
+  const human = addPlayer(game, "真人");
+  const ai = addPlayer(game, "电脑", "ai");
+  performAction(game, human.id, { type: "start" }, () => 0.5);
+  finishOpeningOrder(game);
+  game.currentIndex = game.players.indexOf(ai);
+  game.turn = { playerId: ai.id, dice: [3, 4], extraRoll: false, movements: [] };
+  game.phase = "card_confirmation";
+  game.pendingCard = {
+    playerId: ai.id,
+    deck: "chance",
+    cardId: "chance-dividend",
+    text: "银行支付股息 $50",
+  };
+
+  assert.deepEqual(chooseAiAction(game, ai.id), { type: "confirm_card" });
+});
+
+test("观察者可在游戏开始后进入但不能执行游戏操作", () => {
+  const rooms = new RoomStore();
+  const host = rooms.create("房主");
+  const guest = rooms.join(host.code, "玩家二");
+  rooms.action(host.code, host.token, { type: "start" });
+
+  const spectator = rooms.watch(host.code, "观察者");
+  assert.equal(spectator.state.viewerRole, "spectator");
+  assert.equal(spectator.state.viewerId, null);
+  assert.equal(spectator.state.viewerName, "观察者");
+  assert.equal(spectator.state.players.length, 2);
+  assert.equal(spectator.state.players.some((player) => player.name === "观察者"), false);
+  assert.throws(
+    () => rooms.action(host.code, spectator.token, { type: "roll_for_order" }),
+    /观战者不能执行游戏操作/,
+  );
+  assert.throws(
+    () => rooms.tradeQuote(host.code, spectator.token, { targetId: guest.playerId }),
+    /观战者不能执行游戏操作/,
+  );
 });
 
 test("房屋必须在完整颜色组中均匀建造", () => {

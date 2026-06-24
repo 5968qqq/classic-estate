@@ -77,6 +77,7 @@ function createGame(code) {
     debt: null,
     winnerId: null,
     lastCard: null,
+    pendingCard: null,
     lastMove: null,
     trade: null,
     aiTradeCooldowns: {},
@@ -246,6 +247,7 @@ function beginTurn(game) {
   game.debt = null;
   game.trade = null;
   game.lastCard = null;
+  game.pendingCard = null;
   addLog(game, `轮到 ${player.name}`);
 }
 
@@ -588,6 +590,23 @@ function drawCard(game, player, deckName) {
   if (card.effect.type !== "jailCard") deck.push(cardId);
   game.lastCard = { deck: deckName, text: card.text };
   addLog(game, `${player.name} 抽到：${card.text}`);
+  if (deckName === "chance") {
+    game.pendingCard = { playerId: player.id, deck: deckName, cardId, text: card.text };
+    game.phase = "card_confirmation";
+    return;
+  }
+  applyCard(game, player, card.effect);
+}
+
+function confirmCard(game, playerId) {
+  assertPhase(game, "card_confirmation");
+  const pending = game.pendingCard;
+  if (!pending || pending.playerId !== playerId) throw new Error("只有抽到机会卡的玩家可以确认");
+  const player = game.players.find((candidate) => candidate.id === playerId && !candidate.bankrupt);
+  const card = CHANCE_CARDS.find((candidate) => candidate.id === pending.cardId);
+  if (!player || !card) throw new Error("卡牌数据无效");
+  game.pendingCard = null;
+  addLog(game, `${player.name} 确认了机会卡`);
   applyCard(game, player, card.effect);
 }
 
@@ -1055,6 +1074,9 @@ function performAction(game, playerId, action, rng = Math.random) {
     case "roll":
       roll(game, playerId, rng, action.dice);
       break;
+    case "confirm_card":
+      confirmCard(game, playerId);
+      break;
     case "set_dice_mode":
       setDiceMode(game, playerId, action.mode);
       break;
@@ -1113,7 +1135,7 @@ function performAction(game, playerId, action, rng = Math.random) {
   return game;
 }
 
-function publicState(game, viewerId) {
+function publicState(game, viewerId, viewer = {}) {
   const auction = game.auction
     ? { ...game.auction, currentPlayerId: auctionCurrentPlayerId(game) }
     : null;
@@ -1134,6 +1156,7 @@ function publicState(game, viewerId) {
     debt: game.debt,
     winnerId: game.winnerId,
     lastCard: game.lastCard,
+    pendingCard: game.pendingCard,
     lastMove: game.lastMove,
     trade: game.trade,
     openingOrder: game.openingOrder,
@@ -1145,6 +1168,9 @@ function publicState(game, viewerId) {
     board: BOARD,
     groups: GROUPS,
     viewerId,
+    viewerRole: viewer.role || "player",
+    viewerName: viewer.name || null,
+    spectatorId: viewer.spectatorId || null,
   };
 }
 

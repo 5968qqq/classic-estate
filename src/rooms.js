@@ -13,6 +13,7 @@ const ROOM_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const AI_NAMES = ["阿尔法", "蓝鲸", "红杉", "北斗", "云雀"];
 const ROOM_TTL_MS = 6 * 60 * 60 * 1_000;
 const MAX_ROOMS = 500;
+const MAX_SPECTATORS = 24;
 
 class RoomStore {
   constructor() {
@@ -26,57 +27,75 @@ class RoomStore {
     const game = createGame(code);
     const player = addPlayer(game, cleanName(name));
     const room = { code, game, sessions: new Map(), timer: null, updatedAt: Date.now() };
-    const token = this.createSession(room, player.id);
+    const token = this.createSession(room, { role: "player", playerId: player.id, name: player.name });
     this.rooms.set(code, room);
-    return { code, token, playerId: player.id, state: publicState(game, player.id) };
+    return { code, token, playerId: player.id, state: this.stateFor(room, room.sessions.get(token)) };
   }
 
   join(code, name) {
     const room = this.requireRoom(code);
     if (room.game.status !== "lobby") throw new Error("游戏已经开始，暂不支持中途加入");
     const player = addPlayer(room.game, cleanName(name));
-    const token = this.createSession(room, player.id);
+    const token = this.createSession(room, { role: "player", playerId: player.id, name: player.name });
     room.updatedAt = Date.now();
-    return { code: room.code, token, playerId: player.id, state: publicState(room.game, player.id) };
+    return { code: room.code, token, playerId: player.id, state: this.stateFor(room, room.sessions.get(token)) };
+  }
+
+  watch(code, name) {
+    const room = this.requireRoom(code);
+    const now = Date.now();
+    const spectatorCount = [...room.sessions.values()].filter(
+      (session) => session.role === "spectator" && now - session.lastSeen < 60_000,
+    ).length;
+    if (spectatorCount >= MAX_SPECTATORS) throw new Error("该房间观战人数已满");
+    const spectator = { role: "spectator", spectatorId: uid("spectator"), name: cleanName(name) };
+    const token = this.createSession(room, spectator);
+    room.updatedAt = Date.now();
+    return {
+      code: room.code,
+      token,
+      spectatorId: spectator.spectatorId,
+      state: this.stateFor(room, room.sessions.get(token)),
+    };
   }
 
   addAi(code, token) {
-    const { room, playerId } = this.authenticate(code, token);
+    const { room, playerId, session } = this.authenticatePlayer(code, token);
     if (playerId !== room.game.hostId) throw new Error("只有房主可以添加 AI");
     const usedNames = new Set(room.game.players.map((player) => player.name));
     const name = AI_NAMES.find((candidate) => !usedNames.has(candidate)) || `AI ${room.game.players.length}`;
     addPlayer(room.game, name, "ai");
     room.updatedAt = Date.now();
-    return publicState(room.game, playerId);
+    return this.stateFor(room, session);
   }
 
   removePlayer(code, token, targetId) {
-    const { room, playerId } = this.authenticate(code, token);
+    const { room, playerId, session } = this.authenticatePlayer(code, token);
     removePlayer(room.game, playerId, targetId);
     for (const [sessionToken, session] of room.sessions.entries()) {
-      if (session.playerId === targetId) room.sessions.delete(sessionToken);
+      if (session.role === "player" && session.playerId === targetId) room.sessions.delete(sessionToken);
     }
     room.updatedAt = Date.now();
-    return publicState(room.game, playerId);
+    return this.stateFor(room, session);
   }
 
   state(code, token) {
-    const { room, playerId, session } = this.authenticate(code, token);
+    const { room, session } = this.authenticate(code, token);
     session.lastSeen = Date.now();
     room.updatedAt = Date.now();
-    return publicState(room.game, playerId);
+    return this.stateFor(room, session);
   }
 
   action(code, token, action) {
-    const { room, playerId } = this.authenticate(code, token);
+    const { room, playerId, session } = this.authenticatePlayer(code, token);
     performAction(room.game, playerId, action);
     room.updatedAt = Date.now();
     this.scheduleAi(room);
-    return publicState(room.game, playerId);
+    return this.stateFor(room, session);
   }
 
   tradeQuote(code, token, action) {
-    const { room, playerId } = this.authenticate(code, token);
+    const { room, playerId } = this.authenticatePlayer(code, token);
     return quoteAiTrade(room.game, playerId, action);
   }
 
@@ -85,6 +104,12 @@ class RoomStore {
     const session = room.sessions.get(String(token || ""));
     if (!session) throw new Error("登录凭证无效，请重新加入房间");
     return { room, playerId: session.playerId, session };
+  }
+
+  authenticatePlayer(code, token) {
+    const authenticated = this.authenticate(code, token);
+    if (authenticated.session.role !== "player") throw new Error("观战者不能执行游戏操作");
+    return authenticated;
   }
 
   scheduleAi(room) {
@@ -112,10 +137,18 @@ class RoomStore {
     }, 520);
   }
 
-  createSession(room, playerId) {
+  createSession(room, details) {
     const token = crypto.randomBytes(24).toString("base64url");
-    room.sessions.set(token, { playerId, lastSeen: Date.now() });
+    room.sessions.set(token, { ...details, lastSeen: Date.now() });
     return token;
+  }
+
+  stateFor(room, session) {
+    return publicState(room.game, session.playerId || null, {
+      role: session.role,
+      name: session.name,
+      spectatorId: session.spectatorId || null,
+    });
   }
 
   createCode() {
@@ -181,6 +214,10 @@ function cleanName(name) {
   const cleaned = String(name || "").replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 12);
   if (cleaned.length < 1) throw new Error("请输入玩家名称");
   return cleaned;
+}
+
+function uid(prefix) {
+  return `${prefix}_${crypto.randomBytes(6).toString("hex")}`;
 }
 
 module.exports = { RoomStore };
