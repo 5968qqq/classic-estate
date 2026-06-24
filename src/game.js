@@ -78,6 +78,8 @@ function createGame(code) {
     winnerId: null,
     lastCard: null,
     pendingCard: null,
+    lastLanding: null,
+    lastBankruptcy: null,
     lastMove: null,
     trade: null,
     aiTradeCooldowns: {},
@@ -129,6 +131,29 @@ function removePlayer(game, requesterId, playerId) {
   });
   addLog(game, `${removed.name} 离开了房间`);
   touch(game);
+}
+
+function switchPlayerToSpectator(game, playerId, spectatorId) {
+  if (game.status !== "lobby") throw new Error("只能在开局前切换参与身份");
+  const index = game.players.findIndex((player) => player.id === playerId && player.kind === "human");
+  if (index < 0) throw new Error("玩家不存在");
+  const [player] = game.players.splice(index, 1);
+  delete game.turnCounts[player.id];
+  if (game.hostId === player.id) game.hostId = spectatorId;
+  game.players.forEach((candidate, playerIndex) => {
+    candidate.color = PLAYER_COLORS[playerIndex];
+  });
+  addLog(game, `${player.name} 改为观察者`);
+  touch(game);
+}
+
+function switchSpectatorToPlayer(game, name, isHost = false) {
+  if (game.status !== "lobby") throw new Error("只能在开局前切换参与身份");
+  const player = addPlayer(game, name);
+  if (isHost) game.hostId = player.id;
+  addLog(game, `${player.name} 改为玩家`);
+  touch(game);
+  return player;
 }
 
 function startGame(game, requesterId, rng = Math.random) {
@@ -248,6 +273,7 @@ function beginTurn(game) {
   game.trade = null;
   game.lastCard = null;
   game.pendingCard = null;
+  game.lastLanding = null;
   addLog(game, `轮到 ${player.name}`);
 }
 
@@ -462,34 +488,58 @@ function resolveLanding(game, player, options = {}) {
   if (OWNABLE_TYPES.has(space.type)) {
     const state = game.properties[space.index];
     if (!state.ownerId) {
+      setLastLanding(game, player, space, { kind: "purchase", amount: space.price });
       game.pendingPurchase = space.index;
       game.phase = "awaiting_purchase";
       return;
     }
     if (state.ownerId === player.id || state.mortgaged) {
+      const owner = game.players.find((candidate) => candidate.id === state.ownerId);
+      setLastLanding(game, player, space, {
+        kind: state.ownerId === player.id ? "own" : "mortgaged",
+        recipientId: owner?.id || null,
+      });
       if (state.mortgaged) addLog(game, `${space.name} 已抵押，不收取租金`);
       finishLanding(game);
       return;
     }
     const owner = game.players.find((candidate) => candidate.id === state.ownerId);
     if (!owner || owner.bankrupt) {
+      setLastLanding(game, player, space, { kind: "noRent" });
       finishLanding(game);
       return;
     }
     const rent = calculateRent(game, space, options);
+    setLastLanding(game, player, space, { kind: "rent", amount: rent, recipientId: owner.id });
     charge(game, player, rent, owner.id, `${space.name} 租金`, { kind: "phase", phase: postLandingPhase(game) });
     return;
   }
 
   if (space.type === "tax") {
+    setLastLanding(game, player, space, { kind: "tax", amount: space.amount });
     charge(game, player, space.amount, null, space.name, { kind: "phase", phase: postLandingPhase(game) });
   } else if (space.type === "chance" || space.type === "chest") {
+    setLastLanding(game, player, space, { kind: space.type });
     drawCard(game, player, space.type);
   } else if (space.type === "goToJail") {
+    setLastLanding(game, player, space, { kind: "goToJail" });
     sendToJail(game, player);
   } else {
+    setLastLanding(game, player, space, { kind: "neutral" });
     finishLanding(game);
   }
+}
+
+function setLastLanding(game, player, space, details = {}) {
+  game.lastLanding = {
+    id: uid("landing"),
+    playerId: player.id,
+    spaceIndex: space.index,
+    kind: details.kind || "neutral",
+    amount: Number(details.amount || 0),
+    recipientId: details.recipientId || null,
+    at: Date.now(),
+  };
 }
 
 function calculateRent(game, space, options = {}) {
@@ -578,6 +628,7 @@ function sendToJail(game, player) {
   player.jailTurns = 0;
   game.turn.extraRoll = false;
   game.phase = "turn_complete";
+  setLastLanding(game, player, BOARD[10], { kind: "jail" });
   addLog(game, `${player.name} 被送往留置所`);
 }
 
@@ -1011,6 +1062,9 @@ function declareBankruptcy(game, playerId) {
   const creditor = game.debt.creditorId
     ? game.players.find((candidate) => candidate.id === game.debt.creditorId && !candidate.bankrupt)
     : null;
+  const transferredProperties = Object.entries(game.properties)
+    .filter(([, state]) => state.ownerId === player.id)
+    .map(([index]) => Number(index));
 
   for (const [index, state] of Object.entries(game.properties)) {
     if (state.ownerId !== player.id) continue;
@@ -1027,6 +1081,13 @@ function declareBankruptcy(game, playerId) {
   player.bankrupt = true;
   player.inJail = false;
   game.debt = null;
+  game.lastBankruptcy = {
+    id: uid("bankruptcy"),
+    playerId: player.id,
+    creditorId: creditor?.id || null,
+    properties: transferredProperties,
+    at: Date.now(),
+  };
   addLog(game, `${player.name} 宣告破产${creditor ? `，资产转交给 ${creditor.name}` : "，资产归还银行"}`);
 
   const remaining = activePlayers(game);
@@ -1157,6 +1218,8 @@ function publicState(game, viewerId, viewer = {}) {
     winnerId: game.winnerId,
     lastCard: game.lastCard,
     pendingCard: game.pendingCard,
+    lastLanding: game.lastLanding,
+    lastBankruptcy: game.lastBankruptcy,
     lastMove: game.lastMove,
     trade: game.trade,
     openingOrder: game.openingOrder,
@@ -1171,6 +1234,8 @@ function publicState(game, viewerId, viewer = {}) {
     viewerRole: viewer.role || "player",
     viewerName: viewer.name || null,
     spectatorId: viewer.spectatorId || null,
+    viewerIsHost: Boolean(viewer.isHost),
+    spectators: viewer.spectators || [],
   };
 }
 
@@ -1188,4 +1253,6 @@ module.exports = {
   publicState,
   removePlayer,
   startGame,
+  switchPlayerToSpectator,
+  switchSpectatorToPlayer,
 };

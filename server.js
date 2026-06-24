@@ -72,6 +72,13 @@ async function handleApi(request, response, url) {
     return;
   }
 
+  const modeMatch = url.pathname.match(/^\/api\/rooms\/([A-Z0-9]+)\/mode$/i);
+  if (request.method === "POST" && modeMatch) {
+    const body = await readJson(request);
+    sendJson(response, 200, rooms.setRole(modeMatch[1], body.token, body.role));
+    return;
+  }
+
   const actionMatch = url.pathname.match(/^\/api\/rooms\/([A-Z0-9]+)\/action$/i);
   if (request.method === "POST" && actionMatch) {
     const body = await readJson(request);

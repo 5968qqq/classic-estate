@@ -6,6 +6,8 @@ const {
   performAction,
   publicState,
   removePlayer,
+  switchPlayerToSpectator,
+  switchSpectatorToPlayer,
 } = require("./game");
 const { chooseAiAction, quoteAiTrade } = require("./ai");
 
@@ -27,7 +29,12 @@ class RoomStore {
     const game = createGame(code);
     const player = addPlayer(game, cleanName(name));
     const room = { code, game, sessions: new Map(), timer: null, updatedAt: Date.now() };
-    const token = this.createSession(room, { role: "player", playerId: player.id, name: player.name });
+    const token = this.createSession(room, {
+      role: "player",
+      playerId: player.id,
+      name: player.name,
+      isHost: true,
+    });
     this.rooms.set(code, room);
     return { code, token, playerId: player.id, state: this.stateFor(room, room.sessions.get(token)) };
   }
@@ -36,7 +43,12 @@ class RoomStore {
     const room = this.requireRoom(code);
     if (room.game.status !== "lobby") throw new Error("游戏已经开始，暂不支持中途加入");
     const player = addPlayer(room.game, cleanName(name));
-    const token = this.createSession(room, { role: "player", playerId: player.id, name: player.name });
+    const token = this.createSession(room, {
+      role: "player",
+      playerId: player.id,
+      name: player.name,
+      isHost: false,
+    });
     room.updatedAt = Date.now();
     return { code: room.code, token, playerId: player.id, state: this.stateFor(room, room.sessions.get(token)) };
   }
@@ -48,7 +60,12 @@ class RoomStore {
       (session) => session.role === "spectator" && now - session.lastSeen < 60_000,
     ).length;
     if (spectatorCount >= MAX_SPECTATORS) throw new Error("该房间观战人数已满");
-    const spectator = { role: "spectator", spectatorId: uid("spectator"), name: cleanName(name) };
+    const spectator = {
+      role: "spectator",
+      spectatorId: uid("spectator"),
+      name: cleanName(name),
+      isHost: false,
+    };
     const token = this.createSession(room, spectator);
     room.updatedAt = Date.now();
     return {
@@ -60,8 +77,7 @@ class RoomStore {
   }
 
   addAi(code, token) {
-    const { room, playerId, session } = this.authenticatePlayer(code, token);
-    if (playerId !== room.game.hostId) throw new Error("只有房主可以添加 AI");
+    const { room, session } = this.authenticateHost(code, token);
     const usedNames = new Set(room.game.players.map((player) => player.name));
     const name = AI_NAMES.find((candidate) => !usedNames.has(candidate)) || `AI ${room.game.players.length}`;
     addPlayer(room.game, name, "ai");
@@ -70,8 +86,8 @@ class RoomStore {
   }
 
   removePlayer(code, token, targetId) {
-    const { room, playerId, session } = this.authenticatePlayer(code, token);
-    removePlayer(room.game, playerId, targetId);
+    const { room, session } = this.authenticateHost(code, token);
+    removePlayer(room.game, room.game.hostId, targetId);
     for (const [sessionToken, session] of room.sessions.entries()) {
       if (session.role === "player" && session.playerId === targetId) room.sessions.delete(sessionToken);
     }
@@ -87,8 +103,14 @@ class RoomStore {
   }
 
   action(code, token, action) {
-    const { room, playerId, session } = this.authenticatePlayer(code, token);
-    performAction(room.game, playerId, action);
+    const { room, playerId, session } = this.authenticate(code, token);
+    const hostSpectatorAction = session.role === "spectator"
+      && session.isHost
+      && ["start", "set_dice_mode"].includes(action?.type);
+    if (session.role !== "player" && !hostSpectatorAction) {
+      throw new Error("观战者不能执行游戏操作");
+    }
+    performAction(room.game, hostSpectatorAction ? room.game.hostId : playerId, action);
     room.updatedAt = Date.now();
     this.scheduleAi(room);
     return this.stateFor(room, session);
@@ -97,6 +119,34 @@ class RoomStore {
   tradeQuote(code, token, action) {
     const { room, playerId } = this.authenticatePlayer(code, token);
     return quoteAiTrade(room.game, playerId, action);
+  }
+
+  setRole(code, token, role) {
+    const { room, session } = this.authenticate(code, token);
+    if (room.game.status !== "lobby") throw new Error("只能在开局前切换参与身份");
+    if (!new Set(["player", "spectator"]).has(role)) throw new Error("参与身份无效");
+    if (session.role === role) return this.stateFor(room, session);
+
+    if (role === "spectator") {
+      const now = Date.now();
+      const spectatorCount = [...room.sessions.values()].filter(
+        (candidate) => candidate.role === "spectator" && now - candidate.lastSeen < 60_000,
+      ).length;
+      if (spectatorCount >= MAX_SPECTATORS) throw new Error("该房间观战人数已满");
+      const spectatorId = session.spectatorId || uid("spectator");
+      switchPlayerToSpectator(room.game, session.playerId, spectatorId);
+      session.role = "spectator";
+      session.spectatorId = spectatorId;
+      delete session.playerId;
+    } else {
+      const player = switchSpectatorToPlayer(room.game, session.name, session.isHost);
+      session.role = "player";
+      session.playerId = player.id;
+      delete session.spectatorId;
+    }
+    session.lastSeen = Date.now();
+    room.updatedAt = Date.now();
+    return this.stateFor(room, session);
   }
 
   authenticate(code, token) {
@@ -109,6 +159,12 @@ class RoomStore {
   authenticatePlayer(code, token) {
     const authenticated = this.authenticate(code, token);
     if (authenticated.session.role !== "player") throw new Error("观战者不能执行游戏操作");
+    return authenticated;
+  }
+
+  authenticateHost(code, token) {
+    const authenticated = this.authenticate(code, token);
+    if (!authenticated.session.isHost) throw new Error("只有房主可以执行这个操作");
     return authenticated;
   }
 
@@ -144,10 +200,19 @@ class RoomStore {
   }
 
   stateFor(room, session) {
+    const now = Date.now();
     return publicState(room.game, session.playerId || null, {
       role: session.role,
       name: session.name,
       spectatorId: session.spectatorId || null,
+      isHost: Boolean(session.isHost),
+      spectators: [...room.sessions.values()]
+        .filter((candidate) => candidate.role === "spectator" && now - candidate.lastSeen < 60_000)
+        .map((candidate) => ({
+          id: candidate.spectatorId,
+          name: candidate.name,
+          isHost: Boolean(candidate.isHost),
+        })),
     });
   }
 

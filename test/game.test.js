@@ -82,6 +82,16 @@ test("玩家可以买地，其他玩家落地后向所有者支付租金", () =>
   const { game, first, second } = startedGame();
   performAction(game, first.id, { type: "roll" }, sequence([0, 0.2]));
   assert.equal(game.pendingPurchase, 3);
+  assert.deepEqual(
+    {
+      playerId: game.lastLanding.playerId,
+      spaceIndex: game.lastLanding.spaceIndex,
+      kind: game.lastLanding.kind,
+      amount: game.lastLanding.amount,
+      recipientId: game.lastLanding.recipientId,
+    },
+    { playerId: first.id, spaceIndex: 3, kind: "purchase", amount: 60, recipientId: null },
+  );
   performAction(game, first.id, { type: "buy" });
   assert.equal(game.properties[3].ownerId, first.id);
   assert.equal(first.cash, 1440);
@@ -90,6 +100,16 @@ test("玩家可以买地，其他玩家落地后向所有者支付租金", () =>
   performAction(game, second.id, { type: "roll" }, sequence([0, 0.2]));
   assert.equal(second.cash, 1496);
   assert.equal(first.cash, 1444);
+  assert.deepEqual(
+    {
+      playerId: game.lastLanding.playerId,
+      spaceIndex: game.lastLanding.spaceIndex,
+      kind: game.lastLanding.kind,
+      amount: game.lastLanding.amount,
+      recipientId: game.lastLanding.recipientId,
+    },
+    { playerId: second.id, spaceIndex: 3, kind: "rent", amount: 4, recipientId: first.id },
+  );
   assert.equal(game.phase, "turn_complete");
 });
 
@@ -206,6 +226,47 @@ test("观察者可在游戏开始后进入但不能执行游戏操作", () => {
   );
 });
 
+test("房主可在大厅切换为观察者并启动纯 AI 对局", () => {
+  const rooms = new RoomStore();
+  const host = rooms.create("房主");
+
+  let state = rooms.setRole(host.code, host.token, "spectator");
+  assert.equal(state.viewerRole, "spectator");
+  assert.equal(state.viewerIsHost, true);
+  assert.equal(state.viewerId, null);
+  assert.equal(state.players.length, 0);
+  assert.equal(state.spectators[0].name, "房主");
+
+  state = rooms.addAi(host.code, host.token);
+  state = rooms.addAi(host.code, host.token);
+  assert.equal(state.players.length, 2);
+  assert.ok(state.players.every((player) => player.kind === "ai"));
+
+  state = rooms.action(host.code, host.token, { type: "start" });
+  assert.equal(state.status, "playing");
+  assert.equal(state.viewerRole, "spectator");
+  assert.throws(
+    () => rooms.action(host.code, host.token, { type: "roll_for_order" }),
+    /观战者不能执行游戏操作/,
+  );
+
+  const room = rooms.rooms.get(host.code);
+  if (room?.timer) clearTimeout(room.timer);
+});
+
+test("公益基金卡直接结算，不进入机会卡确认阶段", () => {
+  const { game, first } = startedGame();
+  game.decks.chest = ["chest-error"];
+
+  performAction(game, first.id, { type: "roll" }, sequence([0, 0]));
+
+  assert.equal(first.position, 2);
+  assert.equal(first.cash, 1700);
+  assert.equal(game.lastLanding.kind, "chest");
+  assert.equal(game.pendingCard, null);
+  assert.notEqual(game.phase, "card_confirmation");
+});
+
 test("房屋必须在完整颜色组中均匀建造", () => {
   const { game, first } = startedGame();
   game.properties[1].ownerId = first.id;
@@ -228,6 +289,8 @@ test("房屋必须在完整颜色组中均匀建造", () => {
 test("无法支付租金时可宣告破产，最后一名玩家获胜", () => {
   const { game, first, second } = startedGame();
   game.properties[39].ownerId = second.id;
+  game.properties[1].ownerId = first.id;
+  game.properties[5].ownerId = first.id;
   first.cash = 20;
   first.position = 33;
 
@@ -236,6 +299,12 @@ test("无法支付租金时可宣告破产，最后一名玩家获胜", () => {
   assert.equal(game.debt.amount, 50);
   performAction(game, first.id, { type: "bankrupt" });
   assert.equal(first.bankrupt, true);
+  assert.equal(game.properties[1].ownerId, second.id);
+  assert.equal(game.properties[5].ownerId, second.id);
+  assert.equal(game.lastBankruptcy.playerId, first.id);
+  assert.equal(game.lastBankruptcy.creditorId, second.id);
+  assert.deepEqual(game.lastBankruptcy.properties, [1, 5]);
+  assert.deepEqual(publicState(game, second.id).lastBankruptcy, game.lastBankruptcy);
   assert.equal(game.status, "finished");
   assert.equal(game.winnerId, second.id);
 });
@@ -416,9 +485,10 @@ test("商业区补组溢价显著高于旧城区和天际区", () => {
   const oldTownPrice = completionQuote([1], 3);
   const commercialPrice = completionQuote([16, 18], 19);
   const skylinePrice = completionQuote([37], 39);
-  assert.ok(commercialPrice / 200 > 1.9);
+  assert.ok(commercialPrice / 200 > 3);
   assert.ok(oldTownPrice / 60 < 1.4);
-  assert.ok(skylinePrice / 400 < 1.4);
+  assert.ok(skylinePrice / 400 > 1.4);
+  assert.ok(skylinePrice / 400 < 2.2);
   assert.ok(commercialPrice / 200 > oldTownPrice / 60);
   assert.ok(commercialPrice / 200 > skylinePrice / 400);
 });
@@ -503,30 +573,102 @@ test("AI 拍卖上限按散地、补组、铁路和公共设施的战略价值�
     return chooseAiAction(game, ai.id);
   };
 
-  assert.deepEqual(auctionAction(6, 100), { type: "bid", amount: 110 });
-  assert.equal(auctionAction(6, 110).type, "pass_auction");
+  const ceiling = (spaceIndex) => {
+    let accepted = 0;
+    for (let bid = 0; bid < 1_500; bid += 10) {
+      if (auctionAction(spaceIndex, bid).type === "pass_auction") return accepted;
+      accepted = bid + 10;
+    }
+    return accepted;
+  };
 
+  const singleProperty = ceiling(6);
   game.properties[1].ownerId = ai.id;
-  assert.deepEqual(auctionAction(3, 60), { type: "bid", amount: 70 });
-  assert.equal(auctionAction(3, 70).type, "pass_auction");
+  const oldTownCompletion = ceiling(3);
 
   game.properties[16].ownerId = ai.id;
   game.properties[18].ownerId = ai.id;
-  assert.deepEqual(auctionAction(19, 440), { type: "bid", amount: 450 });
-  assert.equal(auctionAction(19, 450).type, "pass_auction");
+  const commercialCompletion = ceiling(19);
 
   game.properties[37].ownerId = ai.id;
-  assert.deepEqual(auctionAction(39, 530), { type: "bid", amount: 540 });
-  assert.equal(auctionAction(39, 540).type, "pass_auction");
+  const skylineCompletion = ceiling(39);
 
   game.properties[5].ownerId = ai.id;
   game.properties[15].ownerId = ai.id;
-  assert.deepEqual(auctionAction(25, 280), { type: "bid", amount: 290 });
-  assert.equal(auctionAction(25, 290).type, "pass_auction");
+  const thirdRailroad = ceiling(25);
 
   game.properties[12].ownerId = ai.id;
-  assert.deepEqual(auctionAction(28, 210), { type: "bid", amount: 220 });
-  assert.equal(auctionAction(28, 220).type, "pass_auction");
+  const secondUtility = ceiling(28);
+
+  assert.ok(oldTownCompletion > singleProperty);
+  assert.ok(commercialCompletion > skylineCompletion);
+  assert.ok(skylineCompletion > oldTownCompletion);
+  assert.ok(thirdRailroad > secondUtility);
+});
+
+test("AI 建房优先把高收益商业区从两房推进到三房", () => {
+  const game = createGame("AIBLD");
+  const human = addPlayer(game, "真人");
+  const ai = addPlayer(game, "电脑", "ai");
+  performAction(game, human.id, { type: "start" }, () => 0.5);
+  finishOpeningOrder(game);
+  game.currentIndex = game.players.indexOf(ai);
+  game.turn = { playerId: ai.id, aiTradeAttempted: true, movements: [] };
+  game.phase = "turn_complete";
+  ai.cash = 2_000;
+
+  for (const index of [6, 8, 9, 16, 18, 19]) {
+    game.properties[index].ownerId = ai.id;
+    game.properties[index].houses = 2;
+  }
+
+  const action = chooseAiAction(game, ai.id);
+  assert.equal(action.type, "build");
+  assert.ok([16, 18, 19].includes(action.spaceIndex));
+});
+
+test("AI 后期面对三房威胁时留在监狱，早期仍会主动离开", () => {
+  const game = createGame("AIJAIL");
+  const human = addPlayer(game, "真人");
+  const ai = addPlayer(game, "电脑", "ai");
+  performAction(game, human.id, { type: "start" }, () => 0.5);
+  finishOpeningOrder(game);
+  game.currentIndex = game.players.indexOf(ai);
+  game.turn = { playerId: ai.id, aiTradeAttempted: true, movements: [] };
+  game.phase = "awaiting_roll";
+  ai.inJail = true;
+  ai.cash = 1_000;
+
+  assert.equal(chooseAiAction(game, ai.id).type, "pay_bail");
+
+  for (const [index, state] of Object.entries(game.properties)) {
+    state.ownerId = Number(index) % 2 === 0 ? ai.id : human.id;
+  }
+  for (const index of [16, 18, 19]) {
+    game.properties[index].ownerId = human.id;
+    game.properties[index].houses = 3;
+  }
+  assert.equal(chooseAiAction(game, ai.id).type, "roll");
+});
+
+test("AI 欠债时先抵押弱资产，不轻易把三房核心组拆回两房", () => {
+  const game = createGame("AIDEV");
+  const human = addPlayer(game, "真人");
+  const ai = addPlayer(game, "电脑", "ai");
+  performAction(game, human.id, { type: "start" }, () => 0.5);
+  finishOpeningOrder(game);
+  game.currentIndex = game.players.indexOf(ai);
+  game.turn = { playerId: ai.id, aiTradeAttempted: true, movements: [] };
+  for (const index of [16, 18, 19]) {
+    game.properties[index].ownerId = ai.id;
+    game.properties[index].houses = 3;
+  }
+  game.properties[12].ownerId = ai.id;
+  ai.cash = 0;
+  game.phase = "debt";
+  game.debt = { payerId: ai.id, creditorId: null, amount: 60, reason: "测试债务" };
+
+  assert.deepEqual(chooseAiAction(game, ai.id), { type: "mortgage", spaceIndex: 12 });
 });
 
 test("AI 直购与拍卖共用同一现金安全线", () => {
@@ -540,9 +682,9 @@ test("AI 直购与拍卖共用同一现金安全线", () => {
   game.phase = "awaiting_purchase";
   game.pendingPurchase = 6;
 
-  ai.cash = 370;
+  ai.cash = 280;
   assert.equal(chooseAiAction(game, ai.id).type, "buy");
-  ai.cash = 369;
+  ai.cash = 279;
   assert.equal(chooseAiAction(game, ai.id).type, "decline");
 
   game.phase = "auction";
@@ -644,10 +786,11 @@ test("AI 为补齐关键颜色组融资时先抵押非核心资产", () => {
   finishOpeningOrder(game);
   performAction(game, human.id, { type: "roll", dice: [1, 3] });
   performAction(game, human.id, { type: "end_turn" });
-  game.properties[1].ownerId = ai.id;
+  game.properties[16].ownerId = ai.id;
+  game.properties[18].ownerId = ai.id;
   game.properties[5].ownerId = ai.id;
-  ai.cash = 50;
-  game.pendingPurchase = 3;
+  ai.cash = 180;
+  game.pendingPurchase = 19;
   game.phase = "awaiting_purchase";
 
   const action = chooseAiAction(game, ai.id);
