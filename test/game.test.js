@@ -1,6 +1,13 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { addPlayer, completeOpeningOrder, createGame, performAction, publicState } = require("../src/game");
+const {
+  addPlayer,
+  bankSupply,
+  completeOpeningOrder,
+  createGame,
+  performAction,
+  publicState,
+} = require("../src/game");
 const { aiAcceptsTrade, chooseAiAction, quoteAiTrade } = require("../src/ai");
 const { RoomStore } = require("../src/rooms");
 
@@ -606,6 +613,44 @@ test("AI 拍卖上限按散地、补组、铁路和公共设施的战略价值�
   assert.ok(thirdRailroad > secondUtility);
 });
 
+test("AI 第四条铁路拍卖封顶并为强颜色组保留建房资金", () => {
+  const game = createGame("AIRCP");
+  const host = addPlayer(game, "房主");
+  const ai = addPlayer(game, "电脑", "ai");
+  const others = [
+    addPlayer(game, "玩家三"),
+    addPlayer(game, "玩家四"),
+    addPlayer(game, "玩家五"),
+    addPlayer(game, "玩家六"),
+  ];
+  performAction(game, host.id, { type: "start" }, () => 0.5);
+  finishOpeningOrder(game);
+  ai.cash = 3_000;
+  for (const index of [5, 15, 25]) game.properties[index].ownerId = ai.id;
+
+  const ceiling = () => {
+    let accepted = 0;
+    for (let bid = 0; bid < 1_500; bid += 10) {
+      game.phase = "auction";
+      game.auction = {
+        spaceIndex: 35,
+        activeIds: [ai.id, host.id, ...others.map((player) => player.id)],
+        turnPos: 0,
+        currentBid: bid,
+        bidderId: host.id,
+        returnPhase: "turn_complete",
+      };
+      if (chooseAiAction(game, ai.id).type === "pass_auction") return accepted;
+      accepted = bid + 10;
+    }
+    return accepted;
+  };
+
+  assert.equal(ceiling(), 1_200);
+  for (const index of [16, 18, 19]) game.properties[index].ownerId = ai.id;
+  assert.equal(ceiling(), 900);
+});
+
 test("AI 建房优先把高收益商业区从两房推进到三房", () => {
   const game = createGame("AIBLD");
   const human = addPlayer(game, "真人");
@@ -625,6 +670,57 @@ test("AI 建房优先把高收益商业区从两房推进到三房", () => {
   const action = chooseAiAction(game, ai.id);
   assert.equal(action.type, "build");
   assert.ok([16, 18, 19].includes(action.spaceIndex));
+});
+
+test("银行只剩一栋房屋时 AI 仍按整层收益选择并抢建单栋", () => {
+  const game = createGame("AIHSE");
+  const human = addPlayer(game, "真人");
+  const ai = addPlayer(game, "电脑", "ai");
+  performAction(game, human.id, { type: "start" }, () => 0.5);
+  finishOpeningOrder(game);
+  game.currentIndex = game.players.indexOf(ai);
+  game.turn = { playerId: ai.id, aiTradeAttempted: true, movements: [] };
+  game.phase = "turn_complete";
+  ai.cash = 2_000;
+  for (const index of [16, 18, 19]) game.properties[index].ownerId = ai.id;
+  for (const [index, houses] of [
+    [1, 4], [3, 4], [6, 4], [8, 4], [9, 4], [11, 4], [13, 4], [14, 3],
+  ]) {
+    game.properties[index].houses = houses;
+  }
+
+  const action = chooseAiAction(game, ai.id);
+  assert.equal(action.type, "build");
+  assert.ok([16, 18, 19].includes(action.spaceIndex));
+  performAction(game, ai.id, action);
+  assert.equal(game.properties[action.spaceIndex].houses, 1);
+  assert.equal(bankSupply(game).houses, 0);
+});
+
+test("房屋短缺且对手可建房时 AI 降低升级旅馆的优先级", () => {
+  const game = createGame("AIHTL");
+  const human = addPlayer(game, "真人");
+  const ai = addPlayer(game, "电脑", "ai");
+  performAction(game, human.id, { type: "start" }, () => 0.5);
+  finishOpeningOrder(game);
+  game.currentIndex = game.players.indexOf(ai);
+  game.turn = { playerId: ai.id, aiTradeAttempted: true, movements: [] };
+  game.phase = "turn_complete";
+  ai.cash = 3_000;
+  human.cash = 2_000;
+
+  for (const index of [21, 23, 24, 31, 32, 34]) game.properties[index].ownerId = ai.id;
+  for (const index of [21, 23, 24]) game.properties[index].houses = 4;
+  for (const index of [16, 18, 19]) game.properties[index].ownerId = human.id;
+  for (const [index, houses] of [[1, 4], [3, 4], [6, 4]]) {
+    game.properties[index].ownerId = human.id;
+    game.properties[index].houses = houses;
+  }
+  assert.equal(bankSupply(game).houses, 8);
+
+  const action = chooseAiAction(game, ai.id);
+  assert.equal(action.type, "build");
+  assert.ok([31, 32, 34].includes(action.spaceIndex));
 });
 
 test("AI 后期面对三房威胁时留在监狱，早期仍会主动离开", () => {
@@ -754,6 +850,52 @@ test("AI 主动交易铁路仍沿用原有估值逻辑", () => {
   const proposal = chooseAiAction(game, ai.id);
   assert.equal(proposal.type, "offer_trade");
   assert.deepEqual(proposal.request.properties, [15]);
+});
+
+test("两人局 AI 会高价保护可让对手直上三房的强颜色关键地", () => {
+  const game = createGame("AITDG");
+  const human = addPlayer(game, "真人");
+  const ai = addPlayer(game, "电脑", "ai");
+  performAction(game, human.id, { type: "start" }, () => 0.5);
+  finishOpeningOrder(game);
+  human.cash = 3_000;
+  game.properties[16].ownerId = human.id;
+  game.properties[18].ownerId = human.id;
+  game.properties[19].ownerId = ai.id;
+
+  game.trade = {
+    proposerId: human.id,
+    targetId: ai.id,
+    offer: { cash: 800, properties: [] },
+    request: { cash: 0, properties: [19] },
+  };
+  assert.equal(aiAcceptsTrade(game, ai.id), false);
+  game.trade.offer.cash = 950;
+  assert.equal(aiAcceptsTrade(game, ai.id), true);
+});
+
+test("AI 主动交易可用现金加两项资产换取关键颜色地", () => {
+  const game = createGame("AIMIX");
+  const human = addPlayer(game, "真人");
+  const ai = addPlayer(game, "电脑", "ai");
+  const leader = addPlayer(game, "领先者");
+  performAction(game, human.id, { type: "start" }, () => 0.5);
+  finishOpeningOrder(game);
+  game.currentIndex = game.players.indexOf(ai);
+  game.turn = { playerId: ai.id, aiTradeAttempted: false, movements: [] };
+  game.phase = "awaiting_roll";
+  ai.cash = 350;
+  leader.cash = 3_000;
+  game.properties[39].ownerId = leader.id;
+  for (const index of [16, 18, 5, 15]) game.properties[index].ownerId = ai.id;
+  game.properties[19].ownerId = human.id;
+
+  const proposal = chooseAiAction(game, ai.id);
+  assert.equal(proposal.type, "offer_trade");
+  assert.equal(proposal.targetId, human.id);
+  assert.deepEqual([...proposal.offer.properties].sort((a, b) => a - b), [5, 15]);
+  assert.ok(proposal.offer.cash > 0);
+  assert.deepEqual(proposal.request.properties, [19]);
 });
 
 test("AI 现金充足时优先赎回完整颜色组的抵押地产", () => {

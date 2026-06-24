@@ -4,6 +4,9 @@ const { aiTradeOnCooldown, auctionCurrentPlayerId, bankSupply } = require("./gam
 const AI_TRADE_RESERVE = 220;
 const AI_MIN_TRADE_GAIN = 12;
 const STRATEGIC_EV_CASH_FACTOR = 3;
+const RAILROAD_HARD_CAPS = Object.freeze([0, 240, 450, 750, 1200]);
+const STRONG_DEVELOPMENT_GROUPS = new Set(["orange", "red", "yellow", "darkBlue"]);
+const MAX_TRADE_CHIPS = 12;
 const COLOR_GROUP_STRATEGY = Object.freeze({
   brown: { partial: 1.05, complete: 1.25 },
   lightBlue: { partial: 1.15, complete: 1.65 },
@@ -109,18 +112,22 @@ function chooseAiAction(game, playerId) {
 function chooseAiTrade(game, proposer) {
   if (game.turn?.aiTradeAttempted) return null;
   const proposerAssets = tradeablePropertyIndexes(game, proposer.id);
+  const offerBundles = tradeOfferBundles(game, proposer.id, proposerAssets);
   const targets = game.players.filter((player) => player.id !== proposer.id && !player.bankrupt);
   const candidates = [];
 
   for (const target of targets) {
     const targetAssets = tradeablePropertyIndexes(game, target.id);
     for (const requestIndex of targetAssets) {
-      const purchase = aiProposalCandidate(game, proposer, target, [], [requestIndex]);
-      if (purchase) candidates.push(purchase);
-
-      for (const offerIndex of proposerAssets) {
-        const swap = aiProposalCandidate(game, proposer, target, [offerIndex], [requestIndex]);
-        if (swap) candidates.push(swap);
+      for (const offerProperties of offerBundles) {
+        const proposal = aiProposalCandidate(
+          game,
+          proposer,
+          target,
+          offerProperties,
+          [requestIndex],
+        );
+        if (proposal) candidates.push(proposal);
       }
     }
   }
@@ -133,6 +140,26 @@ function chooseAiTrade(game, proposer) {
     offer: best.offer,
     request: best.request,
   } : null;
+}
+
+function tradeOfferBundles(game, proposerId, propertyIndexes) {
+  const chips = [...propertyIndexes]
+    .sort((left, right) => tradeChipScore(game, proposerId, left) - tradeChipScore(game, proposerId, right))
+    .slice(0, MAX_TRADE_CHIPS);
+  const bundles = [[]];
+  for (const index of chips) bundles.push([index]);
+  for (let left = 0; left < chips.length; left += 1) {
+    for (let right = left + 1; right < chips.length; right += 1) {
+      bundles.push([chips[left], chips[right]]);
+    }
+  }
+  return bundles;
+}
+
+function tradeChipScore(game, playerId, index) {
+  const space = BOARD[index];
+  const typePriority = space.type === "utility" ? 0 : space.type === "railroad" ? 1 : 2;
+  return typePriority * 100_000 + assetStrategicTier(game, playerId, space) * 10_000 + space.price;
 }
 
 function aiProposalCandidate(game, proposer, target, offerProperties, requestProperties) {
@@ -242,10 +269,22 @@ function evaluateAiTrade(game, trade, playerId) {
   const targetGain = targetAfterValue - targetBeforeValue;
   const proposerGain = proposerAfterValue - proposerBeforeValue;
   const activeCount = activePlayerCount(game);
-  const leaderPremium = proposer.id === currentLeaderId(game)
+  const leaderId = currentLeaderId(game);
+  const proposerIsLeader = proposer.id === leaderId;
+  const leaderPremium = proposerIsLeader
     ? (LEADER_WEIGHTS[activeCount] || LEADER_WEIGHTS[6]) * 0.25
     : 0;
-  const fairnessShare = (activeCount === 2 ? 0.4 : 0.3) + leaderPremium;
+  let fairnessShare = (activeCount === 2 ? 0.4 : 0.3) + leaderPremium;
+  const createsThreeHouseThreat = tradeCreatesThreeHouseThreat(
+    game,
+    proposer,
+    proposerBefore,
+    proposerAfter,
+    proposer.cash,
+    proposerCashAfter,
+  );
+  if (createsThreeHouseThreat && activeCount === 2) fairnessShare = Math.max(fairnessShare, 0.9);
+  else if (createsThreeHouseThreat && proposerIsLeader) fairnessShare = Math.max(fairnessShare, 0.75);
   return {
     accepts: targetGain >= Math.max(0, proposerGain * fairnessShare),
     targetGain,
@@ -253,6 +292,37 @@ function evaluateAiTrade(game, trade, playerId) {
     targetCashAfter,
     proposerCashAfter,
   };
+}
+
+function tradeCreatesThreeHouseThreat(
+  game,
+  proposer,
+  beforeHoldings,
+  afterHoldings,
+  beforeCash,
+  afterCash,
+) {
+  return [...STRONG_DEVELOPMENT_GROUPS].some((group) => (
+    !canBuildGroupToTier(game, proposer, group, beforeHoldings, beforeCash, 3)
+      && canBuildGroupToTier(game, proposer, group, afterHoldings, afterCash, 3)
+  ));
+}
+
+function canBuildGroupToTier(game, player, group, holdings, cash, targetTier) {
+  const spaces = BOARD.filter((space) => space.group === group);
+  if (!spaces.every((space) => holdings.has(space.index))) return false;
+  if (spaces.some((space) => game.properties[space.index].mortgaged)) return false;
+  const currentLevels = spaces.map((space) => game.properties[space.index].houses);
+  const currentTier = Math.min(...currentLevels);
+  if (currentTier >= targetTier) return true;
+  const requiredHouses = currentLevels.reduce(
+    (total, level) => total + Math.max(0, targetTier - level),
+    0,
+  );
+  if (bankSupply(game).houses < requiredHouses) return false;
+  const buildCost = requiredHouses * spaces[0].buildCost;
+  const reserve = adaptiveReserve(game, player, { completionGroup: group });
+  return cash - buildCost >= reserve;
 }
 
 function quoteAiTrade(game, proposerId, action) {
@@ -540,6 +610,7 @@ function auctionCeiling(game, player, space) {
   ).length;
   let value = space.price * 1.1;
   let completionGroup = null;
+  let hardCap = Number.POSITIVE_INFINITY;
 
   if (space.group) {
     const groupSize = BOARD.filter((candidate) => candidate.group === space.group).length;
@@ -563,6 +634,9 @@ function auctionCeiling(game, player, space) {
     value = space.price + (RAILROAD_EV[nextCount] - RAILROAD_EV[ownedOfType])
       * Math.max(1, activePlayerCount(game) - 1)
       * 18;
+    hardCap = nextCount === 4 && hasStrongGroupWaitingToBuild(game, player.id)
+      ? 900
+      : RAILROAD_HARD_CAPS[nextCount];
   } else if (space.type === "utility") {
     const nextCount = Math.min(2, ownedOfType + 1);
     value = space.price * 0.85 + (UTILITY_EV[nextCount] - UTILITY_EV[ownedOfType])
@@ -572,7 +646,16 @@ function auctionCeiling(game, player, space) {
 
   value += auctionDenialValue(game, player, space);
   const reserve = adaptiveReserve(game, player, { completionGroup });
-  return Math.max(0, Math.min(Math.floor(value), player.cash - reserve));
+  return Math.max(0, Math.min(Math.floor(value), hardCap, player.cash - reserve));
+}
+
+function hasStrongGroupWaitingToBuild(game, playerId) {
+  return [...STRONG_DEVELOPMENT_GROUPS].some((group) => {
+    const spaces = BOARD.filter((space) => space.group === group);
+    if (!spaces.every((space) => game.properties[space.index].ownerId === playerId)) return false;
+    if (spaces.some((space) => game.properties[space.index].mortgaged)) return false;
+    return Math.min(...spaces.map((space) => game.properties[space.index].houses)) < 3;
+  });
 }
 
 function auctionDenialValue(game, player, space) {
@@ -666,6 +749,7 @@ function chooseBuild(game, player) {
   const candidates = [];
   const supply = bankSupply(game);
   const reserve = adaptiveReserve(game, player);
+  const protectHouseShortage = supply.houses <= 8 && opponentHasBuildableGroup(game, player.id);
   const groups = new Set(BOARD.filter((space) => space.group).map((space) => space.group));
   for (const group of groups) {
     const spaces = BOARD.filter((space) => space.group === group);
@@ -674,20 +758,22 @@ function chooseBuild(game, player) {
     const minimum = Math.min(...spaces.map((space) => game.properties[space.index].houses));
     if (minimum >= 5) continue;
     const legalSpaces = spaces.filter((space) => game.properties[space.index].houses === minimum);
-    const bundleCost = legalSpaces.reduce((sum, space) => sum + space.buildCost, 0);
     const targetTier = minimum + 1;
-    const housesNeeded = targetTier === 5 ? 0 : legalSpaces.length;
-    const hotelsNeeded = targetTier === 5 ? legalSpaces.length : 0;
-    if (supply.houses < housesNeeded || supply.hotels < hotelsNeeded) continue;
-    if (player.cash - bundleCost < reserve) continue;
+    const fullTierCost = spaces.length * spaces[0].buildCost;
 
     const stageValues = GROUP_STAGE_EV[group];
     const stageGain = stageValues[targetTier] - stageValues[minimum];
     const tierMultiplier = targetTier === 3 ? 1.8 : targetTier < 3 ? 1.15 : 0.78;
     const shortageBonus = targetTier < 5 && supply.houses <= 12 ? 1.18 : 1;
-    const bundleScore = (stageGain / bundleCost) * tierMultiplier * shortageBonus;
+    const hotelReleasePenalty = targetTier === 5 && protectHouseShortage ? 0.45 : 1;
+    const bundleScore = (stageGain / fullTierCost)
+      * tierMultiplier
+      * shortageBonus
+      * hotelReleasePenalty;
 
     for (const space of legalSpaces) {
+      const canBuySingleBuilding = targetTier === 5 ? supply.hotels >= 1 : supply.houses >= 1;
+      if (!canBuySingleBuilding || player.cash - space.buildCost < reserve) continue;
       const state = game.properties[space.index];
       const gain = space.rents[state.houses + 1] - space.rents[state.houses];
       candidates.push({
@@ -700,6 +786,20 @@ function chooseBuild(game, player) {
   candidates.sort((a, b) => b.score - a.score);
   if (!candidates[0]) return null;
   return { type: "build", spaceIndex: candidates[0].spaceIndex };
+}
+
+function opponentHasBuildableGroup(game, playerId) {
+  return game.players.some((opponent) => {
+    if (opponent.bankrupt || opponent.id === playerId) return false;
+    return Object.keys(GROUP_STAGE_EV).some((group) => {
+      const spaces = BOARD.filter((space) => space.group === group);
+      if (!spaces.every((space) => game.properties[space.index].ownerId === opponent.id)) return false;
+      if (spaces.some((space) => game.properties[space.index].mortgaged)) return false;
+      const minimum = Math.min(...spaces.map((space) => game.properties[space.index].houses));
+      if (minimum >= 4) return false;
+      return opponent.cash - spaces[0].buildCost >= adaptiveReserve(game, opponent);
+    });
+  });
 }
 
 function chooseUnmortgage(game, player) {
