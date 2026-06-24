@@ -8,6 +8,9 @@ const ui = {
   pollBusy: false,
   toastTimer: null,
   victoryShownFor: null,
+  bankruptcyShownFor: null,
+  bankruptcyTimer: null,
+  bankruptcyVisible: false,
   boardZoom: loadNumber("classic-estate-board-zoom", 1),
   fastMovement: localStorage.getItem("classic-estate-fast-movement") === "true",
   movementQueue: Promise.resolve(),
@@ -160,6 +163,8 @@ const elements = {
   victoryContent: document.querySelector("#victory-content"),
   cardDialog: document.querySelector("#card-dialog"),
   cardContent: document.querySelector("#card-content"),
+  bankruptcyNotice: document.querySelector("#bankruptcy-notice"),
+  bankruptcyContent: document.querySelector("#bankruptcy-content"),
   toast: document.querySelector("#toast"),
 };
 
@@ -214,6 +219,7 @@ document.querySelector(".dialog-close").addEventListener("click", () => elements
 document.querySelector(".trade-close").addEventListener("click", () => elements.tradeDialog.close());
 elements.victoryDialog.addEventListener("click", handleVictoryClick);
 elements.cardDialog.addEventListener("click", handleCardClick);
+elements.bankruptcyNotice.addEventListener("click", handleBankruptcyClick);
 document.querySelectorAll("[data-panel-tab]").forEach((button) => {
   button.addEventListener("click", () => {
     ui.panelTab = button.dataset.panelTab;
@@ -406,8 +412,14 @@ async function handleLobbyClick(event) {
   const start = event.target.closest("[data-start]");
   const remove = event.target.closest("[data-remove-player]");
   const diceMode = event.target.closest("[data-dice-mode]");
+  const roomRole = event.target.closest("[data-room-role]");
   try {
-    if (diceMode) {
+    if (roomRole) {
+      ui.state = await api(`/api/rooms/${ui.session.code}/mode`, {
+        method: "POST",
+        body: { token: ui.session.token, role: roomRole.dataset.roomRole },
+      });
+    } else if (diceMode) {
       await sendAction({ type: "set_dice_mode", mode: diceMode.dataset.diceMode });
       return;
     } else if (addAi) {
@@ -483,6 +495,11 @@ function handleCenterClick(event) {
     return;
   }
   const button = event.target.closest("[data-action]");
+  const landingSpace = event.target.closest("[data-landing-space-index]");
+  if (landingSpace) {
+    openProperty(Number(landingSpace.dataset.landingSpaceIndex));
+    return;
+  }
   if (!button) return;
   const type = button.dataset.action;
   if (type === "bid") {
@@ -624,9 +641,9 @@ function render() {
 function renderLobby() {
   document.querySelector("#lobby-code").textContent = ui.state.code;
   document.querySelector("#lobby-count").textContent = `${ui.state.players.length} / 6`;
-  const isHost = ui.state.viewerRole === "player" && ui.state.viewerId === ui.state.hostId;
+  const isHost = ui.state.viewerIsHost;
   const isSpectator = ui.state.viewerRole === "spectator";
-  document.querySelector("#lobby-players").innerHTML = ui.state.players.map((player) => `
+  const playerRows = ui.state.players.map((player) => `
     <div class="lobby-player">
       <span class="token-dot" style="background:${player.color}"></span>
       <div class="lobby-player-name">
@@ -639,9 +656,29 @@ function renderLobby() {
           <svg aria-hidden="true"><use href="/icons.svg#trash"></use></svg>
         </button>` : ""}
     </div>`).join("");
+  const spectatorRows = (ui.state.spectators || []).map((spectator) => `
+    <div class="lobby-player lobby-spectator">
+      <span class="spectator-icon"><svg aria-hidden="true"><use href="/icons.svg#users"></use></svg></span>
+      <div class="lobby-player-name">
+        <strong>${escapeHtml(spectator.name)}</strong>
+        <span class="subtext">${spectator.isHost ? "房主（观察者）" : "观察者"}</span>
+      </div>
+      <span class="status-tag">观战</span>
+    </div>`).join("");
+  document.querySelector("#lobby-players").innerHTML = playerRows + spectatorRows;
 
   const diceMode = ui.state.settings?.diceMode || "random";
   document.querySelector("#lobby-mode").innerHTML = `
+    <div class="mode-setting">
+      <div>
+        <strong>参与身份</strong>
+        <span class="subtext">${isSpectator ? "只观看棋盘和 AI 行动，不参与游戏" : "作为棋盘玩家参与掷骰、交易和资产管理"}</span>
+      </div>
+      <div class="segmented-control" role="group" aria-label="参与身份">
+        <button type="button" data-room-role="player" class="${isSpectator ? "" : "active"}" ${isSpectator && ui.state.players.length >= 6 ? "disabled" : ""}>玩家</button>
+        <button type="button" data-room-role="spectator" class="${isSpectator ? "active" : ""}">观察者</button>
+      </div>
+    </div>
     <div class="mode-setting">
       <div>
         <strong>骰子模式</strong>
@@ -668,12 +705,14 @@ function renderGame() {
   renderPanel();
   elements.bank.innerHTML = `<span>银行房屋 <strong>${ui.state.bank.houses}</strong></span><span>银行旅馆 <strong>${ui.state.bank.hotels}</strong></span>`;
   renderCardDialog();
+  renderBankruptcyNotice();
   renderVictoryDialog();
   scheduleBoardLayout();
 }
 
 function renderVictoryDialog() {
   if (ui.state.status !== "finished" || !ui.state.winnerId) return;
+  if (ui.bankruptcyVisible) return;
   const key = `${ui.state.code}:${ui.state.winnerId}`;
   if (ui.victoryShownFor === key) return;
   const winner = playerById(ui.state.winnerId);
@@ -700,6 +739,50 @@ function renderVictoryDialog() {
   elements.victoryDialog.showModal();
 }
 
+function renderBankruptcyNotice() {
+  const event = ui.state.lastBankruptcy;
+  if (!event || ui.bankruptcyShownFor === event.id) return;
+  if (Date.now() - event.at > 15_000) {
+    ui.bankruptcyShownFor = event.id;
+    return;
+  }
+  const bankrupt = playerById(event.playerId);
+  const creditor = playerById(event.creditorId);
+  ui.bankruptcyShownFor = event.id;
+  ui.bankruptcyVisible = true;
+  clearTimeout(ui.bankruptcyTimer);
+
+  const properties = (event.properties || []).map((index) => {
+    const space = ui.state.board[index];
+    if (!space) return "";
+    return `<button type="button" data-bankruptcy-space-index="${space.index}" title="${escapeHtml(space.name)}">
+      <i style="background:${tradeAssetColor(space)}"></i><span>${escapeHtml(space.name)}</span>
+    </button>`;
+  }).join("");
+  elements.bankruptcyContent.innerHTML = `
+    <header>
+      <span class="bankruptcy-symbol">!</span>
+      <div><strong>${escapeHtml(bankrupt?.name || "玩家")} 宣告破产</strong>
+        <span>${creditor ? `地产移交给 ${escapeHtml(creditor.name)}` : "地产归还银行"}</span>
+      </div>
+    </header>
+    <div class="bankruptcy-properties">
+      ${properties || '<span class="bankruptcy-empty">没有地产可移交</span>'}
+    </div>`;
+  window.I18N?.localize(elements.bankruptcyContent);
+  elements.bankruptcyNotice.hidden = false;
+  requestAnimationFrame(() => elements.bankruptcyNotice.classList.add("show"));
+  ui.bankruptcyTimer = setTimeout(() => {
+    elements.bankruptcyNotice.classList.remove("show");
+    ui.bankruptcyVisible = false;
+    setTimeout(() => {
+      elements.bankruptcyNotice.hidden = true;
+      renderVictoryDialog();
+      window.I18N?.localize(elements.victoryContent);
+    }, 180);
+  }, 3_000);
+}
+
 function handleVictoryClick(event) {
   if (event.target.closest("[data-victory-close]")) elements.victoryDialog.close();
   if (event.target.closest("[data-victory-home]")) {
@@ -713,6 +796,11 @@ function handleVictoryClick(event) {
 function handleCardClick(event) {
   if (!event.target.closest("[data-confirm-card]")) return;
   sendAction({ type: "confirm_card" });
+}
+
+function handleBankruptcyClick(event) {
+  const property = event.target.closest("[data-bankruptcy-space-index]");
+  if (property) openProperty(Number(property.dataset.bankruptcySpaceIndex));
 }
 
 function renderCardDialog() {
@@ -922,6 +1010,7 @@ function renderCenter() {
     <div class="dice-row" aria-label="骰子点数">
       <span class="die">${dice[0] || "-"}</span><span class="die">${dice[1] || "-"}</span>
     </div>
+    ${landingNoticeMarkup()}
     <section class="turn-prompt ${isViewerTurn ? "is-mine" : "is-waiting"} ${isSpectator ? "is-spectating" : ""}" aria-label="${promptTitle}">
       <header><span class="prompt-status-dot"></span><strong>${promptTitle}</strong></header>
       <p class="phase-message">${phaseMessage()}</p>
@@ -931,6 +1020,43 @@ function renderCenter() {
   if (ui.movementBusy) {
     elements.center.querySelectorAll("[data-action]").forEach((button) => { button.disabled = true; });
   }
+}
+
+function landingNoticeMarkup() {
+  const landing = ui.state.lastLanding;
+  if (!landing) return "";
+  const player = playerById(landing.playerId);
+  const space = ui.state.board[landing.spaceIndex];
+  const recipient = playerById(landing.recipientId);
+  if (!player || !space) return "";
+
+  let settlement = "无需支付";
+  if (landing.kind === "rent") {
+    settlement = `支付租金 <strong>$${money(landing.amount)}</strong> 给 ${escapeHtml(recipient?.name || "所有者")}`;
+  } else if (landing.kind === "purchase") {
+    settlement = `无人持有，可用 <strong>$${money(landing.amount)}</strong> 购买`;
+  } else if (landing.kind === "own") {
+    settlement = "自己的地产，无需支付租金";
+  } else if (landing.kind === "mortgaged") {
+    settlement = `${escapeHtml(recipient?.name || "所有者")} 的地产已抵押，无需支付租金`;
+  } else if (landing.kind === "tax") {
+    settlement = `向银行支付 <strong>$${money(landing.amount)}</strong>`;
+  } else if (landing.kind === "chance") {
+    settlement = "抽取机会卡，确认后继续";
+  } else if (landing.kind === "chest") {
+    settlement = "抽取公益基金卡并结算";
+  } else if (landing.kind === "jail" || landing.kind === "goToJail") {
+    settlement = "被送入留置所";
+  } else if (landing.kind === "noRent") {
+    settlement = "当前不收取租金";
+  }
+
+  return `<section class="landing-notice" aria-label="本次落点">
+    <span class="token-dot" style="background:${player.color}"></span>
+    <span class="landing-player">${escapeHtml(player.name)} 到达</span>
+    <button type="button" data-landing-space-index="${space.index}">${escapeHtml(space.name)}</button>
+    <span class="landing-settlement">${settlement}</span>
+  </section>`;
 }
 
 function renderOpeningOrder() {
@@ -1565,9 +1691,14 @@ function loadNumber(key, fallback) {
 
 function clearSession() {
   localStorage.removeItem("classic-estate-session");
+  clearTimeout(ui.bankruptcyTimer);
+  elements.bankruptcyNotice.classList.remove("show");
+  elements.bankruptcyNotice.hidden = true;
   ui.session = null;
   ui.state = null;
   ui.victoryShownFor = null;
+  ui.bankruptcyShownFor = null;
+  ui.bankruptcyVisible = false;
 }
 
 async function api(url, options = {}) {

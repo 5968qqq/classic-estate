@@ -427,6 +427,23 @@ input {
   font-weight: 700;
 }
 
+.lobby-spectator {
+  background: #f2f8fa;
+}
+
+.spectator-icon {
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  color: #2d7180;
+}
+
+.spectator-icon svg {
+  width: 17px;
+  height: 17px;
+}
+
 .lobby-actions {
   padding-top: 18px;
   display: flex;
@@ -445,6 +462,12 @@ input {
   align-items: center;
   justify-content: space-between;
   gap: 18px;
+}
+
+.mode-setting + .mode-setting {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid #d8dfe3;
 }
 
 .mode-setting strong,
@@ -980,6 +1003,59 @@ html[lang="en"] .cell-name {
   color: #435058;
   font-size: 13px;
   line-height: 1.45;
+}
+
+.landing-notice {
+  width: min(100%, 430px);
+  min-height: 42px;
+  padding: 6px 9px;
+  display: grid;
+  grid-template-columns: 14px auto auto minmax(0, 1fr);
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border: 1px solid #86a7b0;
+  border-left: 4px solid #2d7f8a;
+  border-radius: 5px;
+  background: #f3fbfd;
+  color: #425158;
+  font-size: 11px;
+  text-align: left;
+}
+
+.landing-notice .token-dot {
+  width: 12px;
+  height: 12px;
+  flex-basis: 12px;
+  border-width: 2px;
+}
+
+.landing-player {
+  white-space: nowrap;
+}
+
+.landing-notice button {
+  min-height: 25px;
+  padding: 3px 7px;
+  border: 1px solid #7695a0;
+  border-radius: 4px;
+  background: #fff;
+  color: #174f60;
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.landing-notice button:hover {
+  background: #e7f5f8;
+}
+
+.landing-settlement {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.landing-settlement strong {
+  color: #182025;
 }
 
 .turn-prompt {
@@ -2117,6 +2193,109 @@ html[lang="en"] .cell-name {
   transition: opacity 160ms ease, transform 160ms ease;
 }
 
+.bankruptcy-notice {
+  position: fixed;
+  top: 76px;
+  left: 50%;
+  z-index: 30;
+  width: min(92vw, 760px);
+  overflow: hidden;
+  border: 1px solid #882931;
+  border-top: 6px solid #bd3540;
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+  box-shadow: 0 16px 44px rgba(24, 32, 37, 0.34);
+  opacity: 0;
+  transform: translate(-50%, -16px);
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.bankruptcy-notice.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.bankruptcy-notice header {
+  min-height: 58px;
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  background: #fff1f2;
+}
+
+.bankruptcy-symbol {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 34px;
+  border: 2px solid #8f252d;
+  border-radius: 50%;
+  background: #bd3540;
+  color: #fff;
+  font-size: 21px;
+  font-weight: 900;
+}
+
+.bankruptcy-notice header strong,
+.bankruptcy-notice header span {
+  display: block;
+}
+
+.bankruptcy-notice header strong {
+  color: #8f252d;
+  font-size: 16px;
+}
+
+.bankruptcy-notice header div > span {
+  margin-top: 2px;
+  color: #59666d;
+  font-size: 12px;
+}
+
+.bankruptcy-properties {
+  max-height: 116px;
+  padding: 10px 16px 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  overflow: auto;
+  border-top: 1px solid #e4c7ca;
+}
+
+.bankruptcy-properties button {
+  min-height: 30px;
+  padding: 4px 8px 4px 5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #aeb8be;
+  border-radius: 4px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.bankruptcy-properties button:hover {
+  border-color: #6f7e85;
+  background: #f5f7f8;
+}
+
+.bankruptcy-properties button i {
+  width: 7px;
+  align-self: stretch;
+  flex: 0 0 7px;
+  border-radius: 2px;
+}
+
+.bankruptcy-empty {
+  color: #647078;
+  font-size: 12px;
+}
+
 .toast.show {
   opacity: 1;
   transform: translate(-50%, 0);
@@ -2206,6 +2385,43 @@ html[lang="en"] .cell-name {
   .lobby-view {
     min-height: calc(100vh - 54px);
     padding: 16px 10px;
+  }
+
+  .bankruptcy-notice {
+    top: 62px;
+    width: calc(100vw - 16px);
+  }
+
+  .bankruptcy-notice header {
+    min-height: 50px;
+    padding: 8px 10px;
+  }
+
+  .bankruptcy-symbol {
+    width: 28px;
+    height: 28px;
+    flex-basis: 28px;
+    font-size: 17px;
+  }
+
+  .bankruptcy-notice header strong {
+    font-size: 13px;
+  }
+
+  .bankruptcy-notice header div > span {
+    font-size: 10px;
+  }
+
+  .bankruptcy-properties {
+    max-height: 92px;
+    padding: 8px 10px 10px;
+    gap: 4px;
+  }
+
+  .bankruptcy-properties button {
+    min-height: 26px;
+    padding: 3px 6px 3px 4px;
+    font-size: 9px;
   }
 
   .entry-form,
@@ -2569,6 +2785,28 @@ html[lang="en"] .cell-name {
 
   .phase-message {
     min-height: 28px;
+  }
+
+  .landing-notice {
+    min-height: 34px;
+    padding: 4px 5px;
+    grid-template-columns: 8px auto auto minmax(0, 1fr);
+    gap: 3px;
+    border-left-width: 3px;
+    font-size: 7px;
+  }
+
+  .landing-notice .token-dot {
+    width: 7px;
+    height: 7px;
+    flex-basis: 7px;
+    border-width: 1px;
+  }
+
+  .landing-notice button {
+    min-height: 20px;
+    padding: 2px 4px;
+    font-size: 7px;
   }
 
   .turn-prompt {

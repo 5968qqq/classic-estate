@@ -324,6 +324,25 @@ let serverProcess;
   await turnPage.screenshot({ path: path.join(outputDir, "rules-mobile.png"), fullPage: true });
 
   await turnPage.setViewportSize({ width: 1280, height: 900 });
+  await turnPage.evaluate(({ bankruptName, creditorName }) => {
+    const bankrupt = ui.state.players.find((player) => player.name === bankruptName);
+    const creditor = ui.state.players.find((player) => player.name === creditorName);
+    ui.state.lastBankruptcy = {
+      id: "e2e-bankruptcy",
+      playerId: bankrupt.id,
+      creditorId: creditor.id,
+      properties: [1, 5],
+      at: Date.now(),
+    };
+    render();
+  }, { bankruptName: nextName, creditorName: turnName });
+  await turnPage.locator("#bankruptcy-notice").waitFor({ state: "visible" });
+  assert.match(await turnPage.locator("#bankruptcy-content").textContent(), new RegExp(nextName));
+  assert.match(await turnPage.locator("#bankruptcy-content").textContent(), new RegExp(turnName));
+  assert.equal(await turnPage.locator("[data-bankruptcy-space-index]").count(), 2);
+  await turnPage.screenshot({ path: path.join(outputDir, "bankruptcy-desktop.png"), fullPage: true });
+  await turnPage.locator("#bankruptcy-notice").waitFor({ state: "hidden", timeout: 4_000 });
+
   await turnPage.evaluate(() => {
     ui.state.status = "finished";
     ui.state.phase = "finished";
